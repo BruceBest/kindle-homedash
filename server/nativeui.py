@@ -29,7 +29,7 @@ SB = 190                   # left sidebar width (tabs)
 CW = W - SB                # content width
 M = 30
 TOP = 100                  # header height inside the content area
-TABS = [("home", "首页"), ("room", "卧室"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
+TABS = [("home", "首页"), ("room", "卧室"), ("modes", "模式"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
 TITLES = dict(TABS) | {"home": "卧室面板"}
 PORT = os.environ.get("LANDSCAPE_PORT", "right")   # right | left
 
@@ -314,6 +314,67 @@ def page_room(p):
         p.text((x, y0 + 635), f"加湿：低于 {hv_t - 5:.0f}% 开 · 高于 {hv_t + 5:.0f}% 关", 24, False, 90)
 
 
+def _dew_point(t, rh):
+    import math
+    a, b = 17.62, 243.12
+    g = math.log(max(rh, 1) / 100.0) + a * t / (b + t)
+    return b * g / (a - g)
+
+
+def _current_mode(ctx):
+    tv = _num(ctx.state(remote.TARGET_ENTITY))
+    hv = _num(ctx.state(remote.HTARGET_ENTITY))
+    ha_ = (ctx.state(remote.AUTO_ENTITY) or {}).get("state") == "on"
+    hh_ = (ctx.state(remote.HAUTO_ENTITY) or {}).get("state") == "on"
+    for k, (_, _, t, h, want_heat, want_hum, _off) in remote.MODES.items():
+        if tv is not None and hv is not None and abs(tv - t) < 0.01 and abs(hv - h) < 0.01 and ha_ == want_heat and hh_ == want_hum:
+            return k
+    return None
+
+
+def page_modes(p):
+    ctx = p.ctx
+    y = p.body_top
+    cur_key = _current_mode(ctx)
+    gap = 20
+    gw, gh = (CW - 2 * M - 2 * gap) // 3, 290
+    for i, (k, (name, sub, t, h, _ha, _hh, off)) in enumerate(remote.MODES.items()):
+        col, row = i % 3, i // 3
+        x0 = M + col * (gw + gap)
+        y0 = y + row * (gh + gap)
+        box = (x0, y0, x0 + gw, y0 + gh)
+        dark = k == cur_key
+        p.card(box, dark)
+        fg = 255 if dark else 0
+        p.text((x0 + 26, y0 + 24), name, 56, True, fg)
+        if k == "off":
+            line = "暖风机 / 加湿器 关"
+        else:
+            line = f"{t:.1f}°C · {h}%"
+        p.text((x0 + 26, y0 + 112), line, 40, True, fg)
+        p.text((x0 + 26, y0 + 176), sub, 28, False, 200 if dark else 70)
+        if k not in ("off",):
+            td = _dew_point(t, h)
+            p.text((x0 + 26, y0 + 222), f"露点 {td:.0f}°C", 26, False, 200 if dark else 90)
+        if dark:
+            p.text((x0 + gw - 26, y0 + 28), "当前", 30, True, 255, "ra")
+        p.zone(box, ("act", f"mode:{k}"))
+    # status strip
+    sy = y + 2 * (gh + gap) + 6
+    th = _room_c(ctx, ctx.state(ROOM_TEMP))
+    hu = _num(ctx.state(ROOM_HUM))
+    tv = _num(ctx.state(remote.TARGET_ENTITY))
+    hv = _num(ctx.state(remote.HTARGET_ENTITY))
+    p.d.line((M, sy, CW - M, sy), fill=0, width=3)
+    now_txt = f"现在 {th:.1f}°C · {hu:.0f}%" if th is not None and hu is not None else "现在 —"
+    if th is not None and hu is not None:
+        now_txt += f" · 露点 {_dew_point(th, hu):.0f}°C"
+    p.text((M, sy + 22), now_txt, 34, True)
+    tgt_txt = f"目标 {tv:.1f}°C · {hv:.0f}%" if tv is not None and hv is not None else "目标 —"
+    mode_txt = remote.MODES[cur_key][0] if cur_key else "自定义"
+    p.text((CW - M, sy + 22), f"{tgt_txt}  ·  模式：{mode_txt}", 34, False, 40, "ra")
+
+
 def page_weather(p):
     ctx = p.ctx
     y = p.body_top
@@ -480,7 +541,7 @@ def page_board(p):
         y += 16
 
 
-PAGES = {"home": page_home, "room": page_room, "weather": page_weather,
+PAGES = {"home": page_home, "room": page_room, "modes": page_modes, "weather": page_weather,
          "quota": page_quota, "hermes": page_hermes, "board": page_board}
 
 
@@ -499,7 +560,7 @@ def stamp(ctx, name):
     now = datetime.now(ctx.TZ)
     parts = [name, f"{now:%H}{now.minute // 5}"]
     parts += [(ctx.state(e) or {}).get("state", "") for _, e, _ in remote.DEVICES]
-    if name in ("room", "home"):
+    if name in ("room", "home", "modes"):
         parts += [(ctx.state(e) or {}).get("state", "") for e in (
             ROOM_TEMP, ROOM_HUM, remote.TARGET_ENTITY, remote.AUTO_ENTITY, remote.HTARGET_ENTITY, remote.HAUTO_ENTITY)]
     try:

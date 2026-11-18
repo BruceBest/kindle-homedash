@@ -16,6 +16,10 @@ DEVICES = [
     ("hum", os.environ.get("HUMIDIFIER_ENTITY", "switch.wo_shi_jia_shi_qi_outlet"), "加湿器"),
     ("heat", os.environ.get("HEATER_ENTITY", "switch.wo_shi_qu_nuan_qi"), "取暖器"),
 ]
+# Thermostat helpers (created in HA: input_number + input_boolean) and the room sensor.
+TARGET_ENTITY = os.environ.get("TARGET_TEMP_ENTITY", "input_number.wo_shi_mu_biao_wen_du")
+AUTO_ENTITY = os.environ.get("AUTO_HEAT_ENTITY", "input_boolean.wo_shi_zi_dong_heng_wen")
+TARGET_MIN, TARGET_MAX = 16.0, 26.0
 SCENES = {
     "sleep": ("睡前", {"hum": "on", "heat": "on"}),
     "warm": ("只取暖", {"heat": "on"}),
@@ -53,6 +57,18 @@ def act(ha, action):
     kind, _, arg = action.partition(":")
     if kind == "toggle" and arg in ents:
         ha("/api/services/switch/toggle", {"entity_id": ents[arg]})
+        return True
+    if kind == "target":
+        try:
+            delta = float(arg)
+        except ValueError:
+            return False
+        cur = float(ha(f"/api/states/{TARGET_ENTITY}")["state"])
+        new = round(min(TARGET_MAX, max(TARGET_MIN, cur + delta)) * 2) / 2
+        ha("/api/services/input_number/set_value", {"entity_id": TARGET_ENTITY, "value": new})
+        return True
+    if kind == "auto" and arg == "toggle":
+        ha("/api/services/input_boolean/toggle", {"entity_id": AUTO_ENTITY})
         return True
     if kind == "scene" and arg in SCENES:
         for k, st in SCENES[arg][1].items():

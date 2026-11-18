@@ -249,11 +249,37 @@ def page_room(p):
         x0 = M + i * (sw + 20)
         p.button((x0, y, x0 + sw, y + 120), name, False, ("act", f"scene:{k}"), 38)
     y += 150
-    p.text((M, y), "睡前 = 加湿器 + 取暖器都开", 28, False, 80)
-    y += 70
-    p.card((M, y, W - M, y + 150))
-    p.text((M + 30, y + 30), "室内温湿度", 38, True)
-    p.text((M + 30, y + 90), "SNZB-02 到货配对后显示在这里", 28, False, 90)
+    # ---- room climate + thermostat target
+    th = ctx.state(os.environ.get("ROOM_TEMP_ENTITY", "sensor.0xa4c138294330ffff_temperature"))
+    hu = ctx.state(os.environ.get("ROOM_HUM_ENTITY", "sensor.0xa4c138294330ffff_humidity"))
+    tgt = ctx.state(remote.TARGET_ENTITY)
+    auto = ctx.state(remote.AUTO_ENTITY)
+    cur = _room_c(ctx, th)
+    box = (M, y, W - M, y + 290)
+    p.card(box)
+    p.text((M + 30, y + 22), "室内", 34, True)
+    p.text((M + 150, y + 6), f"{cur:.1f}°C" if cur is not None else "—", 80, True)
+    hv = (hu or {}).get("state")
+    p.text((W - M - 30, y + 36), f"湿度 {float(hv):.0f}%" if hv not in (None, "unknown", "unavailable") else "湿度 —", 46, True, anchor="ra")
+    ty = y + 150
+    p.text((M + 30, ty + 50), "目标", 34, True, anchor="lm")
+    try:
+        tv = float(tgt["state"])
+    except Exception:
+        tv = None
+    p.button((M + 140, ty, M + 260, ty + 100), "−", False, ("act", "target:-0.5"), 64)
+    p.text((M + 400, ty + 50), f"{tv:.1f}°C" if tv is not None else "—", 62, True, anchor="mm")
+    p.button((M + 540, ty, M + 660, ty + 100), "+", False, ("act", "target:+0.5"), 64)
+    aon = (auto or {}).get("state") == "on"
+    p.button((W - M - 270, ty, W - M - 30, ty + 100), "自动恒温" + ("开" if aon else "关"), aon, ("act", "auto:toggle"), 32)
+
+
+def _room_c(ctx, s):
+    try:
+        v = float(s["state"])
+    except Exception:
+        return None
+    return ctx.f2c(v) if "F" in str(s.get("attributes", {}).get("unit_of_measurement", "")) else v
 
 
 def page_weather(p):
@@ -436,6 +462,11 @@ def stamp(ctx, name):
     now = datetime.now(ctx.TZ)
     parts = [name, f"{now:%H}{now.minute // 5}"]
     parts += [(ctx.state(e) or {}).get("state", "") for _, e, _ in remote.DEVICES]
+    if name == "room":
+        parts += [(ctx.state(e) or {}).get("state", "") for e in (
+            os.environ.get("ROOM_TEMP_ENTITY", "sensor.0xa4c138294330ffff_temperature"),
+            os.environ.get("ROOM_HUM_ENTITY", "sensor.0xa4c138294330ffff_humidity"),
+            remote.TARGET_ENTITY, remote.AUTO_ENTITY)]
     try:
         parts.append(open(ctx.BOARD, "rb").read().decode(errors="ignore"))
     except Exception:

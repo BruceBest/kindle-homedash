@@ -12,8 +12,10 @@ services:
       TZ_NAME: America/Detroit
       WEATHER_ENTITY: weather.wo_de_jia
       HUMIDIFIER_ENTITY: switch.wo_shi_jia_shi_qi_outlet
-      ROOM_TEMP_ENTITY: ""      # fill in after SNZB-02 is paired
-      ROOM_HUM_ENTITY: ""
+      ROOM_TEMP_ENTITY: sensor.0xa4c138294330ffff_temperature
+      ROOM_HUM_ENTITY: sensor.0xa4c138294330ffff_humidity
+      TARGET_TEMP_ENTITY: input_number.wo_shi_mu_biao_wen_du
+      AUTO_HEAT_ENTITY: input_boolean.wo_shi_zi_dong_heng_wen
     volumes:
       - /home/bruce/.config/hass/token:/run/secrets/ha_token:ro
       - /usr/share/fonts/opentype/noto:/fonts:ro

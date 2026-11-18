@@ -535,14 +535,14 @@ class Handler(BaseHTTPRequestHandler):
         form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", "replace"))
         try:
             ok = remote.act(ha, form.get("a", [""])[0])
-            msg = "已执行" if ok else "无效操作"
+            msg = "" if ok else "无效操作"
         except Exception as e:
             msg = f"失败: {type(e).__name__}"
         back = form.get("back", ["/remote"])[0]
         if not (back == "/remote" or back == "/app" or back.startswith("/app/")) or "?" in back or "//" in back:
             back = "/app"
         self.send_response(303)
-        self.send_header("Location", back + "?m=" + urllib.parse.quote(msg))
+        self.send_header("Location", back + ("?m=" + urllib.parse.quote(msg) if msg else ""))
         self.send_header("Content-Length", "0")
         self.end_headers()
 

@@ -608,7 +608,7 @@ def handle_tap(ctx, name, q):
         elif kind == "act":
             try:
                 ok = remote.act(ctx.ha, hit[1])
-                msg = "已执行" if ok else "无效操作"
+                msg = "" if ok else "无效操作"
             except Exception as e:
                 msg = f"失败 {type(e).__name__}"
         elif kind == "refresh":

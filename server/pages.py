@@ -214,7 +214,7 @@ def room(ctx, msg=""):
             status = "离线"
         else:
             status = ("开着 · " if on else "关着 · ") + remote._ago(s.get("last_changed", ""), ctx.TZ)
-        extra = "<br>安全：连续 4 小时自动关" if key == "heat" else ""
+        extra = ""
         cards.append(f'<div class="card"><div class="row"><div class="c"><div class="name">{label}</div>'
                      f'<div class="meta">{_e(status)}{extra}</div></div>'
                      f'<div class="c r">{_toggle_form(key, on, "/app/room")}</div></div></div>')

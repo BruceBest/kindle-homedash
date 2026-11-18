@@ -122,7 +122,7 @@ def page(state, tz, weather_c=None, msg=""):
         else:
             status = ("开着 · " if on else "关着 · ") + _ago(s.get("last_changed", ""), tz)
             btn = "关" if on else "开"
-        extra = " · 4 小时自动关" if key == "heat" and on else ""
+        extra = ""
         cards.append(
             f'<div class="card"><div class="row"><div class="name">{label}'
             f'<div class="meta">{html.escape(status)}{extra}</div></div>'
@@ -141,5 +141,5 @@ def page(state, tz, weather_c=None, msg=""):
 {''.join(cards)}
 <div class="card scenes"><div class="meta" style="margin:0 0 14px">场景</div>
 <form method="post" action="/remote/act">{scenes}</form></div>
-<div class="foot">睡前 = 加湿器 + 取暖器都开；取暖器连续 4 小时会被 HA 自动关闭。</div>
+<div class="foot">睡前 = 加湿器 + 取暖器都开。</div>
 </body></html>""".encode()

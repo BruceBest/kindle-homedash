@@ -282,8 +282,6 @@ def page_room(p):
         else:
             st = ("开着 · " if o else "关着 · ") + remote._ago(s.get("last_changed", ""), ctx.TZ)
         p.text((M + 26, y + 96), st, 30, False, 50)
-        if key == "heat":
-            p.text((M + 26, y + 140), "安全：连续 4 小时自动关", 24, False, 90)
         p.button((M + lw - 250, y + 40, M + lw - 26, y + 150), "关" if o else "开", o, ("act", f"toggle:{key}"), 46)
         y += 210
     p.text((M, y + 6), "场景", 36, True)

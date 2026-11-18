@@ -1,7 +1,8 @@
 """Multi-page e-ink "app" (server-rendered HTML, no JS needed).
 
   /app            summary: tappable tiles, each opens a detail page
-  /app/room       bedroom devices + scenes (controls)
+  /app/room       bedroom devices, climate targets, scenes (controls)
+  /app/modes      one-tap climate modes (beach / day / sleep / away / off)
   /app/weather    current weather + 5-day forecast
   /app/quota      GPT A/B + Claude quota detail
   /app/hermes     gateway, platforms, host load, upcoming cron jobs
@@ -12,9 +13,10 @@ Layout uses tables / inline-block only (the Kindle 5.x browser is an old WebKit)
 import html
 from datetime import datetime
 
+import nativeui
 import remote
 
-TABS = [("", "首页"), ("room", "卧室"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
+TABS = [("", "首页"), ("room", "卧室"), ("modes", "模式"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
 
 CSS = """
 *{box-sizing:border-box}
@@ -57,6 +59,19 @@ table.kv td.v{text-align:right;font-weight:bold}
 .tabs a{display:table-cell;text-align:center;padding:22px 0;font-size:30px;color:#000;text-decoration:none;border-right:2px solid #000}
 .tabs a:last-child{border-right:0}
 .tabs a.cur{background:#000;color:#fff;font-weight:bold}
+.stepper{width:100%}
+.stepper .l{display:block;font-size:30px;font-weight:bold;margin-bottom:6px}
+.stepper .v{display:block;text-align:center;font-size:54px;font-weight:bold;white-space:nowrap}
+.stepper form{display:inline;margin:0}
+button.step{width:120px;font-size:56px;padding:6px 0}
+.modes{width:100%;border-collapse:collapse;table-layout:fixed}
+.modes td{padding:7px;vertical-align:top}
+.modes button{width:100%;text-align:left;padding:18px 20px;min-height:230px;border-radius:18px;font-weight:normal}
+.modes .n{font-size:50px;font-weight:bold;display:block}
+.modes .tv{font-size:36px;font-weight:bold;display:block;margin-top:10px}
+.modes .sb{font-size:26px;display:block;margin-top:8px}
+.main{max-width:1000px;margin:0 auto}
+@media (max-width:700px){body{zoom:.58}}
 """
 
 
@@ -141,7 +156,10 @@ def summary(ctx, msg=""):
     # bedroom
     devs = _device_rows(ctx)
     on = [l for _, l, _, o, _ in devs if o]
-    tiles.append(("room", "卧室", f"{len(on)} 开" if on else "全关",
+    cur_c = nativeui._room_c(ctx, ctx.state(nativeui.ROOM_TEMP))
+    cur_h = nativeui._num(ctx.state(nativeui.ROOM_HUM))
+    big_room = (f"{cur_c:.1f}°C" + (f" {cur_h:.0f}%" if cur_h is not None else "")) if cur_c is not None else (f"{len(on)} 开" if on else "全关")
+    tiles.append(("room", "卧室", big_room,
                   " · ".join(f"{l}{'开' if o else ('离线' if off else '关')}" for _, l, _, o, off in devs), bool(on)))
     # weather
     w = _weather_now(ctx)
@@ -207,6 +225,63 @@ def summary(ctx, msg=""):
     return _shell("", "卧室面板", body, ctx, msg=msg)
 
 
+def _act_form(action, label, cls="", back="/app/room", extra_style=""):
+    return (f'<form method="post" action="/remote/act" style="display:inline;margin:0">'
+            f'<input type="hidden" name="a" value="{action}"><input type="hidden" name="back" value="{back}">'
+            f'<button class="{cls}" type="submit" style="{extra_style}">{label}</button></form>')
+
+
+def _climate_cards(ctx, back="/app/room"):
+    cur = nativeui._room_c(ctx, ctx.state(nativeui.ROOM_TEMP))
+    hum = nativeui._num(ctx.state(nativeui.ROOM_HUM))
+    tv = nativeui._num(ctx.state(remote.TARGET_ENTITY))
+    hv = nativeui._num(ctx.state(remote.HTARGET_ENTITY))
+    aon = (ctx.state(remote.AUTO_ENTITY) or {}).get("state") == "on"
+    hon = (ctx.state(remote.HAUTO_ENTITY) or {}).get("state") == "on"
+    dew = f" · 露点 {nativeui._dew_point(cur, hum):.0f}°C" if cur is not None and hum is not None else ""
+    now = (f'<div class="card"><div class="meta">室内</div><div class="row"><div class="c"><span class="name" style="font-size:72px">'
+           f'{cur:.1f}°C</span></div><div class="c r"><span class="name">{hum:.0f}%</span>' if cur is not None and hum is not None else
+           '<div class="card"><div class="meta">室内</div><div class="row"><div class="c"><span class="name">—</span></div><div class="c r">')
+    now += f'<div class="meta">湿度{dew}</div></div></div></div>'
+    def stepper(label, val, unit, minus, plus, auto_action, auto_on, auto_label):
+        v = f"{val:.1f}{unit}" if unit == "°C" and val is not None else (f"{val:.0f}{unit}" if val is not None else "—")
+        return (f'<div class="card"><div class="stepper"><div class="l">{label}</div><div class="v">'
+                f'{_act_form(minus, "−", "step", back)} {v} {_act_form(plus, "+", "step", back)}</div></div>'
+                f'<div style="margin-top:14px">{_act_form(auto_action, f"{auto_label} " + ("开" if auto_on else "关"), "on" if auto_on else "", back, "width:100%;font-size:32px")}</div></div>')
+    return (now
+            + stepper("目标温度", tv, "°C", "target:-0.5", "target:+0.5", "auto:toggle", aon, "自动恒温")
+            + stepper("目标湿度", hv, "%", "htarget:-5", "htarget:+5", "hauto:toggle", hon, "自动加湿"))
+
+
+def modes(ctx, msg=""):
+    cur = nativeui._current_mode(ctx)
+    cells = []
+    items = list(remote.MODES.items())
+    for i in range(0, len(items), 2):
+        row = []
+        for k, (name, sub, t, h, _ha, _hh, off) in items[i:i + 2]:
+            line = "暖风机 / 加湿器 关" if off else f"{t:.1f}°C · {h}%"
+            dew = "" if off else f'<span class="sb">露点 {nativeui._dew_point(t, h):.0f}°C</span>'
+            tag = '<span class="sb"><b>当前</b></span>' if k == cur else ""
+            row.append(f'<td><form method="post" action="/remote/act" style="margin:0"><input type="hidden" name="back" value="/app/modes">'
+                       f'<button class="{"on" if k == cur else ""}" name="a" value="mode:{k}" type="submit">'
+                       f'<span class="n">{name}</span><span class="tv">{line}</span><span class="sb">{_e(sub)}</span>{dew}{tag}</button></form></td>')
+        if len(row) == 1:
+            row.append("<td></td>")
+        cells.append("<tr>" + "".join(row) + "</tr>")
+    th = nativeui._room_c(ctx, ctx.state(nativeui.ROOM_TEMP))
+    hu = nativeui._num(ctx.state(nativeui.ROOM_HUM))
+    tv = nativeui._num(ctx.state(remote.TARGET_ENTITY))
+    hv = nativeui._num(ctx.state(remote.HTARGET_ENTITY))
+    now = (f"现在 {th:.1f}°C · {hu:.0f}%" + f" · 露点 {nativeui._dew_point(th, hu):.0f}°C") if th is not None and hu is not None else "现在 —"
+    tgt = f"目标 {tv:.1f}°C · {hv:.0f}%" if tv is not None and hv is not None else "目标 —"
+    mode = remote.MODES[cur][0] if cur else "自定义"
+    body = (f'<table class="modes">{"".join(cells)}</table>'
+            f'<div class="card" style="margin-top:14px"><div class="meta" style="font-size:30px">{now}</div>'
+            f'<div class="meta" style="font-size:30px">{tgt} · 模式：{mode}</div></div>')
+    return _shell("modes", "模式", body, ctx, msg=msg)
+
+
 def room(ctx, msg=""):
     cards = []
     for key, label, s, on, off in _device_rows(ctx):
@@ -223,7 +298,8 @@ def room(ctx, msg=""):
             + f'<div class="card scenes"><div class="h2">场景</div><form method="post" action="/remote/act">'
               f'<input type="hidden" name="back" value="/app/room">{scenes}</form>'
               f'<div class="meta" style="margin-top:12px">睡前 = 加湿器 + 取暖器都开</div></div>'
-            + '<div class="card"><div class="h2">室内温湿度</div><div class="meta">传感器（SNZB-02）到货配对后显示在这里</div></div>')
+            )
+    body = _climate_cards(ctx) + body
     return _shell("room", "卧室", body, ctx, msg=msg)
 
 
@@ -318,7 +394,7 @@ def board_page(ctx, msg=""):
     return _shell("board", "Hermes 留言", body, ctx, 60, msg)
 
 
-ROUTES = {"": summary, "room": room, "weather": weather, "quota": quota, "hermes": hermes, "board": board_page}
+ROUTES = {"": summary, "room": room, "modes": modes, "weather": weather, "quota": quota, "hermes": hermes, "board": board_page}
 
 
 def render(sub, ctx, msg=""):

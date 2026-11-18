@@ -1,14 +1,19 @@
-"""Server side of the native Kindle app (hdnative client).
+"""Server side of the native Kindle app (hdnative client) -- LANDSCAPE layout.
 
 The client shows PNGs and forwards raw touch coordinates. Every page is drawn
 here with Pillow and returns its own tap zones, so the whole UI lives on the
 OptiPlex and can change without touching the Kindle.
 
+The logical canvas is 1448x1072 (landscape). It is rotated 90 degrees before it
+is sent, because the Kindle framebuffer is portrait (1072x1448); taps are mapped
+back. Which way the Kindle is turned is set with env LANDSCAPE_PORT:
+
+  right (default)  USB port on the right  -> image rotated clockwise
+  left             USB port on the left   -> image rotated counter-clockwise
+
   GET /n/page?page=home            -> PNG (+ X-Page, X-Stamp headers)
   GET /n/tap?page=..&rx=&ry=&rxmin=&rxmax=&rymin=&rymax=  -> PNG of the resulting page
   GET /n/stamp?page=home           -> change token; client redraws when it changes
-
-Touch orientation can be fixed with env TOUCH_SWAP / TOUCH_INVX / TOUCH_INVY = 1.
 """
 import hashlib
 import io
@@ -19,25 +24,27 @@ from PIL import Image, ImageDraw
 
 import remote
 
-W, H = 1072, 1448
-M = 40
-TOP = 120          # header height
-TAB_H = 150        # bottom tab bar height
+W, H = 1448, 1072          # logical (landscape) canvas
+SB = 190                   # left sidebar width (tabs)
+CW = W - SB                # content width
+M = 30
+TOP = 100                  # header height inside the content area
 TABS = [("home", "首页"), ("room", "卧室"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
 TITLES = dict(TABS) | {"home": "卧室面板"}
+PORT = os.environ.get("LANDSCAPE_PORT", "right")   # right | left
 
-SWAP = os.environ.get("TOUCH_SWAP") == "1"
-INVX = os.environ.get("TOUCH_INVX") == "1"
-INVY = os.environ.get("TOUCH_INVY") == "1"
+ROOM_TEMP = os.environ.get("ROOM_TEMP_ENTITY", "sensor.0xa4c138294330ffff_temperature")
+ROOM_HUM = os.environ.get("ROOM_HUM_ENTITY", "sensor.0xa4c138294330ffff_humidity")
 
 
 class Page:
     def __init__(self, ctx, name, msg=""):
         self.ctx, self.name, self.msg = ctx, name, msg
-        self.img = Image.new("L", (W, H), 255)
+        self.img = Image.new("L", (CW, H), 255)       # content canvas (sidebar added in compose)
         self.d = ImageDraw.Draw(self.img)
-        self.zones = []          # (x0, y0, x1, y1, action)
+        self.zones = []          # content coords (x0, y0, x1, y1, action)
         self.f = ctx.font
+        self.full = None
 
     def zone(self, box, action):
         self.zones.append((*box, action))
@@ -69,42 +76,50 @@ class Page:
     def chrome(self):
         ctx = self.ctx
         now = datetime.now(ctx.TZ)
-        if self.name != "home":
-            self.text((M, 60), "‹", 72, True, anchor="lm")
-            self.zone((0, 0, 200, TOP), ("nav", "home"))
-            self.text((M + 60, 60), TITLES.get(self.name, self.name), 50, True, anchor="lm")
-        else:
-            self.text((M, 60), TITLES["home"], 50, True, anchor="lm")
-            # exit back to the normal Kindle UI
-            self.d.rounded_rectangle((330, 28, 470, 92), 14, outline=0, width=3)
-            self.text((400, 60), "退出", 32, True, anchor="mm")
+        self.text((M, 50), TITLES.get(self.name, self.name), 46, True, anchor="lm")
+        if self.name == "home":
+            self.d.rounded_rectangle((330, 20, 470, 80), 14, outline=0, width=3)
+            self.text((400, 50), "退出", 30, True, anchor="mm")
             self.zone((320, 0, 480, TOP), ("exit",))
-        self.text((W - M, 60), f"{now:%m-%d %H:%M}", 32, False, 60, "rm")
-        self.zone((W - 320, 0, W, TOP), ("refresh",))
-        self.d.line((0, TOP, W, TOP), fill=0, width=4)
+        self.text((CW - M, 50), f"{now:%m-%d %H:%M}", 30, False, 60, "rm")
+        self.zone((CW - 320, 0, CW, TOP), ("refresh",))
+        self.d.line((0, TOP, CW, TOP), fill=0, width=4)
         if self.msg:
-            self.d.rounded_rectangle((M, TOP + 14, W - M, TOP + 74), 14, fill=0)
-            self.text((W // 2, TOP + 44), self.msg, 32, True, 255, "mm")
-        # tab bar
-        y0 = H - TAB_H
-        self.d.line((0, y0, W, y0), fill=0, width=4)
-        tw = W / len(TABS)
-        for i, (k, n) in enumerate(TABS):
-            x0, x1 = int(i * tw), int((i + 1) * tw)
-            if k == self.name:
-                self.d.rectangle((x0, y0 + 2, x1, H), fill=0)
-            elif i:
-                self.d.line((x0, y0, x0, H), fill=0, width=2)
-            self.text(((x0 + x1) // 2, y0 + TAB_H // 2), n, 36, True, 255 if k == self.name else 0, "mm")
-            self.zone((x0, y0, x1, H), ("nav", k))
+            self.d.rounded_rectangle((M, TOP + 12, CW - M, TOP + 68), 14, fill=0)
+            self.text((CW // 2, TOP + 40), self.msg, 30, True, 255, "mm")
 
     @property
     def body_top(self):
-        return TOP + (90 if self.msg else 24)
+        return TOP + (84 if self.msg else 24)
+
+    def compose(self):
+        """Sidebar + content on the full landscape canvas; returns zones in full coordinates."""
+        full = Image.new("L", (W, H), 255)
+        d = ImageDraw.Draw(full)
+        full.paste(self.img, (SB, 0))
+        d.line((SB, 0, SB, H), fill=0, width=4)
+        th = H / len(TABS)
+        zones = []
+        for i, (k, n) in enumerate(TABS):
+            y0, y1 = int(i * th), int((i + 1) * th)
+            if k == self.name:
+                d.rectangle((0, y0, SB - 1, y1), fill=0)
+            elif i:
+                d.line((0, y0, SB - 4, y0), fill=0, width=2)
+            d.text((SB // 2, (y0 + y1) // 2), n, font=self.f(36, True), fill=255 if k == self.name else 0, anchor="mm")
+            zones.append((0, y0, SB, y1, ("nav", k)))
+        for x0, y0, x1, y1, a in self.zones:
+            zones.append((x0 + SB, y0, x1 + SB, y1, a))
+        self.full = full
+        self.full_zones = zones
 
     def png(self):
+        if self.full is None:
+            self.compose()
+        # Kindle framebuffer is portrait: rotate the landscape canvas.
+        img = self.full.rotate(-90 if PORT == "right" else 90, expand=True)
         buf = io.BytesIO()
-        self.img.save(buf, "PNG", optimize=True)
+        img.save(buf, "PNG", optimize=True)
         return buf.getvalue()
 
 
@@ -153,15 +168,36 @@ def _ellip(p, s, size, width, bold=False):
 
 
 # ----------------------------------------------------------------- pages
+def _room_c(ctx, s):
+    try:
+        v = float(s["state"])
+    except Exception:
+        return None
+    return ctx.f2c(v) if "F" in str(s.get("attributes", {}).get("unit_of_measurement", "")) else v
+
+
+def _num(s):
+    try:
+        return float(s["state"])
+    except Exception:
+        return None
+
+
 def page_home(p):
     ctx = p.ctx
     y = p.body_top
-    gw, gh, gap = (W - 2 * M - 20) // 2, 270, 20
+    gap = 20
+    gw, gh = (CW - 2 * M - 2 * gap) // 3, 230
     tiles = []
     devs = _devices(ctx)
     on = [l for _, l, _, o, _ in devs if o]
-    tiles.append(("room", "卧室", f"{len(on)} 个开着" if on else "全关",
-                  " · ".join(f"{l}{'开' if o else ('离线' if off else '关')}" for _, l, _, o, off in devs), bool(on)))
+    cur = _room_c(ctx, ctx.state(ROOM_TEMP))
+    hv = _num(ctx.state(ROOM_HUM))
+    dev_line = " · ".join(f"{l}{'开' if o else ('离线' if off else '关')}" for _, l, _, o, off in devs)
+    if cur is not None:
+        tiles.append(("room", "卧室", f"{cur:.1f}°C" + (f" {hv:.0f}%" if hv is not None else ""), dev_line, bool(on)))
+    else:
+        tiles.append(("room", "卧室", f"{len(on)} 个开着" if on else "全关", dev_line, bool(on)))
     wx = _weather(ctx)
     if wx:
         w, a, c = wx
@@ -206,80 +242,78 @@ def page_home(p):
         t_, name = nj[0]
         tiles.append(("hermes", "下个任务", f"{t_:%H:%M}", name, False))
     for i, (k, head, big, small, dark) in enumerate(tiles):
-        col, row = i % 2, i // 2
+        col, row = i % 3, i // 3
         x0 = M + col * (gw + gap)
         y0 = y + row * (gh + gap)
         box = (x0, y0, x0 + gw, y0 + gh)
         p.card(box, dark)
         fg = 255 if dark else 0
-        p.text((x0 + 26, y0 + 26), head + "  ›", 32, False, 200 if dark else 70)
-        p.text((x0 + 26, y0 + 80), _ellip(p, big, 64, gw - 52, True), 64, True, fg)
-        p.text((x0 + 26, y0 + 180), _ellip(p, small, 30, gw - 52), 30, False, fg)
+        p.text((x0 + 24, y0 + 20), head + "  ›", 28, False, 200 if dark else 70)
+        p.text((x0 + 24, y0 + 62), _ellip(p, big, 58, gw - 48, True), 58, True, fg)
+        p.text((x0 + 24, y0 + 150), _ellip(p, small, 28, gw - 48), 28, False, fg)
         p.zone(box, ("nav", k))
-    # quick toggles
-    y = y + 3 * (gh + gap) + 10
-    p.text((M, y + 50), "快捷开关", 38, True, anchor="lm")
-    bx = W - M
+    y = y + ((len(tiles) + 2) // 3) * (gh + gap) + 6
+    p.text((M, y + 46), "快捷开关", 36, True, anchor="lm")
+    bx = CW - M
     for key, label, s, o, off in reversed(devs):
-        box = (bx - 220, y, bx, y + 100)
+        box = (bx - 230, y, bx, y + 92)
         p.button(box, f"{label}{'开' if o else '关'}", o, ("act", f"toggle:{key}"), 34)
-        bx -= 240
+        bx -= 250
+
+
+def _stepper(p, x, y, label, value_txt, minus, plus):
+    p.text((x, y + 50), label, 30, True, anchor="lm")
+    p.button((x + 150, y, x + 240, y + 100), "−", False, ("act", minus), 60)
+    p.text((x + 318, y + 50), value_txt, 40, True, anchor="mm")
+    p.button((x + 396, y, x + 486, y + 100), "+", False, ("act", plus), 60)
 
 
 def page_room(p):
     ctx = p.ctx
-    y = p.body_top
+    y0 = p.body_top
+    lw = 600
+    y = y0
     for key, label, s, o, off in _devices(ctx):
-        box = (M, y, W - M, y + 200)
+        box = (M, y, M + lw, y + 190)
         p.card(box)
-        p.text((M + 30, y + 30), label, 52, True)
+        p.text((M + 26, y + 24), label, 48, True)
         if off:
             st = "离线"
         else:
             st = ("开着 · " if o else "关着 · ") + remote._ago(s.get("last_changed", ""), ctx.TZ)
-        p.text((M + 30, y + 110), st, 32, False, 50)
+        p.text((M + 26, y + 96), st, 30, False, 50)
         if key == "heat":
-            p.text((M + 30, y + 152), "安全：连续 4 小时自动关", 26, False, 90)
-        p.button((W - M - 300, y + 40, W - M - 30, y + 160), "关" if o else "开", o, ("act", f"toggle:{key}"), 48)
-        y += 225
-    p.text((M, y + 20), "场景", 40, True)
-    y += 80
-    sw = (W - 2 * M - 40) // 3
+            p.text((M + 26, y + 140), "安全：连续 4 小时自动关", 24, False, 90)
+        p.button((M + lw - 250, y + 40, M + lw - 26, y + 150), "关" if o else "开", o, ("act", f"toggle:{key}"), 46)
+        y += 210
+    p.text((M, y + 6), "场景", 36, True)
+    y += 58
+    sw = (lw - 40) // 3
     for i, (k, (name, _)) in enumerate(remote.SCENES.items()):
         x0 = M + i * (sw + 20)
-        p.button((x0, y, x0 + sw, y + 120), name, False, ("act", f"scene:{k}"), 38)
-    y += 150
-    # ---- room climate + thermostat target
-    th = ctx.state(os.environ.get("ROOM_TEMP_ENTITY", "sensor.0xa4c138294330ffff_temperature"))
-    hu = ctx.state(os.environ.get("ROOM_HUM_ENTITY", "sensor.0xa4c138294330ffff_humidity"))
-    tgt = ctx.state(remote.TARGET_ENTITY)
-    auto = ctx.state(remote.AUTO_ENTITY)
-    cur = _room_c(ctx, th)
-    box = (M, y, W - M, y + 290)
+        p.button((x0, y, x0 + sw, y + 110), name, False, ("act", f"scene:{k}"), 36)
+    # ---- climate + targets (right column)
+    cx0 = M + lw + 30
+    box = (cx0, y0, CW - M, y0 + 700)
     p.card(box)
-    p.text((M + 30, y + 22), "室内", 34, True)
-    p.text((M + 150, y + 6), f"{cur:.1f}°C" if cur is not None else "—", 80, True)
-    hv = (hu or {}).get("state")
-    p.text((W - M - 30, y + 36), f"湿度 {float(hv):.0f}%" if hv not in (None, "unknown", "unavailable") else "湿度 —", 46, True, anchor="ra")
-    ty = y + 150
-    p.text((M + 30, ty + 50), "目标", 34, True, anchor="lm")
-    try:
-        tv = float(tgt["state"])
-    except Exception:
-        tv = None
-    p.button((M + 140, ty, M + 260, ty + 100), "−", False, ("act", "target:-0.5"), 64)
-    p.text((M + 400, ty + 50), f"{tv:.1f}°C" if tv is not None else "—", 62, True, anchor="mm")
-    p.button((M + 540, ty, M + 660, ty + 100), "+", False, ("act", "target:+0.5"), 64)
-    aon = (auto or {}).get("state") == "on"
-    p.button((W - M - 270, ty, W - M - 30, ty + 100), "自动恒温" + ("开" if aon else "关"), aon, ("act", "auto:toggle"), 32)
-
-
-def _room_c(ctx, s):
-    try:
-        v = float(s["state"])
-    except Exception:
-        return None
-    return ctx.f2c(v) if "F" in str(s.get("attributes", {}).get("unit_of_measurement", "")) else v
+    x = cx0 + 24
+    th, hu = ctx.state(ROOM_TEMP), ctx.state(ROOM_HUM)
+    cur, hv = _room_c(ctx, th), _num(hu)
+    p.text((x, y0 + 24), "室内", 32, True)
+    p.text((x + 92, y0 + 14), f"{cur:.1f}°C" if cur is not None else "—", 62, True)
+    p.text((CW - M - 24, y0 + 44), f"湿度 {hv:.0f}%" if hv is not None else "湿度 —", 34, True, anchor="ra")
+    p.d.line((cx0 + 20, y0 + 120, CW - M - 20, y0 + 120), fill=0, width=3)
+    tv = _num(ctx.state(remote.TARGET_ENTITY))
+    _stepper(p, x, y0 + 150, "目标温度", f"{tv:.1f}°C" if tv is not None else "—", "target:-0.5", "target:+0.5")
+    ton = (ctx.state(remote.AUTO_ENTITY) or {}).get("state") == "on"
+    p.button((x, y0 + 270, x + 486, y0 + 350), "自动恒温 " + ("开" if ton else "关"), ton, ("act", "auto:toggle"), 32)
+    p.d.line((cx0 + 20, y0 + 385, CW - M - 20, y0 + 385), fill=190, width=2)
+    hv_t = _num(ctx.state(remote.HTARGET_ENTITY))
+    _stepper(p, x, y0 + 415, "目标湿度", f"{hv_t:.0f}%" if hv_t is not None else "—", "htarget:-5", "htarget:+5")
+    hon = (ctx.state(remote.HAUTO_ENTITY) or {}).get("state") == "on"
+    p.button((x, y0 + 535, x + 486, y0 + 615), "自动加湿 " + ("开" if hon else "关"), hon, ("act", "hauto:toggle"), 32)
+    if tv is not None and hv_t is not None:
+        p.text((x, y0 + 635), f"加湿：低于 {hv_t - 5:.0f}% 开 · 高于 {hv_t + 5:.0f}% 关", 24, False, 90)
 
 
 def page_weather(p):
@@ -291,7 +325,7 @@ def page_weather(p):
         return
     w, a, c = wx
     p.text((M, y), f"{c:.0f}°C" if c is not None else "—", 150, True)
-    p.text((W - M, y + 40), ctx.COND_ZH.get(w["state"], w["state"]), 60, True, anchor="ra")
+    p.text((M + 540, y + 40), ctx.COND_ZH.get(w["state"], w["state"]), 56, True, anchor="ra")
     kv = []
     if a.get("apparent_temperature") is not None:
         kv.append(("体感", f"{ctx.f2c(a['apparent_temperature']):.0f}°C"))
@@ -307,33 +341,32 @@ def page_weather(p):
         kv.append(("云量", f"{a['cloud_coverage']}%"))
     if a.get("uv_index") is not None:
         kv.append(("紫外线", a["uv_index"]))
-    y += 200
-    cw = (W - 2 * M) // 3
+    ky = y + 210
     for i, (k, v) in enumerate(kv):
-        cx, cy = M + (i % 3) * cw, y + (i // 3) * 110
+        cx, cy = M + (i % 2) * 290, ky + (i // 2) * 130
         p.text((cx, cy), k, 28, False, 80)
-        p.text((cx, cy + 36), v, 42, True)
-    y += 110 * ((len(kv) + 2) // 3) + 20
-    p.d.line((M, y, W - M, y), fill=0, width=3)
-    y += 20
+        p.text((cx, cy + 38), v, 44, True)
+    fx = M + 620
+    p.d.line((fx - 20, y, fx - 20, H - 40), fill=0, width=3)
     today = datetime.now(ctx.TZ).date()
+    fy = y
     for day in ctx.forecast()[:7]:
-        if y > H - TAB_H - 90:
+        if fy > H - 90:
             break
         dt = datetime.fromisoformat(day["datetime"]).astimezone(ctx.TZ)
         name = "今天" if dt.date() == today else "周" + ctx.WEEKDAY_ZH[dt.weekday()]
-        p.text((M, y + 10), name, 38, True)
-        p.text((M + 150, y + 10), ctx.COND_ZH.get(day.get("condition"), day.get("condition") or ""), 36)
+        p.text((fx, fy + 10), name, 36, True)
+        p.text((fx + 130, fy + 10), ctx.COND_ZH.get(day.get("condition"), day.get("condition") or ""), 34)
         pr = day.get("precipitation_probability")
         if pr:
-            p.text((M + 470, y + 14), f"降水 {pr}%", 30, False, 70)
+            p.text((fx + 330, fy + 14), f"降水 {pr}%", 28, False, 70)
         try:
             t = f"{ctx.f2c(day['temperature']):.0f}° / {ctx.f2c(day['templow']):.0f}°"
         except Exception:
             t = "—"
-        p.text((W - M, y + 10), t, 38, True, anchor="ra")
-        y += 82
-        p.d.line((M, y - 8, W - M, y - 8), fill=190, width=2)
+        p.text((CW - M, fy + 10), t, 36, True, anchor="ra")
+        fy += 84
+        p.d.line((fx, fy - 8, CW - M, fy - 8), fill=190, width=2)
 
 
 def page_quota(p):
@@ -344,82 +377,87 @@ def page_quota(p):
         p.text((M, y + 40), "暂无额度采样", 40)
         return
     cap = datetime.fromisoformat(q["captured_at"]).astimezone(ctx.TZ)
-    p.text((M, y), f"采样 {cap:%m-%d %H:%M} · 每 5 小时", 30, False, 70)
-    y += 60
+    p.text((M, y), f"采样 {cap:%m-%d %H:%M} · 每 5 小时", 28, False, 70)
+    y += 56
     names = {"A": "GPT · A", "B": "GPT · B", "C": "Claude"}
-    for k in ("A", "B", "C"):
+    gap = 20
+    gw = (CW - 2 * M - 2 * gap) // 3
+    for i, k in enumerate(("A", "B", "C")):
         a = q.get("accounts", {}).get(k)
         if not a:
             continue
-        box = (M, y, W - M, y + 300)
+        x0 = M + i * (gw + gap)
+        box = (x0, y, x0 + gw, y + 520)
         p.card(box)
-        p.text((M + 30, y + 24), names[k], 46, True)
+        p.text((x0 + 24, y + 22), names[k], 44, True)
         ry = y + 100
         for lab, key in (("5 小时", "h5_left"), ("本周", "week_left")):
             v = a.get(key)
             if v is None:
                 continue
-            p.text((M + 30, ry + 4), lab, 32)
-            p.bar(M + 190, ry, W - 2 * M - 360, 44, v / 100)
-            p.text((W - M - 30, ry + 4), f"{v}%", 38, True, anchor="ra")
-            ry += 70
-        info = " · ".join(f"{l} {a[kk]}" for l, kk in (("5h 重置", "h5_reset_local"), ("周重置", "week_reset_local"), ("banked", "banked"))
-                          if a.get(kk) not in (None, ""))
-        p.text((M + 30, y + 250), _ellip(p, info, 26, W - 2 * M - 60), 26, False, 80)
-        y += 325
+            p.text((x0 + 24, ry), lab, 28)
+            p.text((x0 + gw - 24, ry - 4), f"{v}%", 44, True, anchor="ra")
+            p.bar(x0 + 24, ry + 52, gw - 48, 44, v / 100)
+            ry += 130
+        yy = ry + 4
+        for l, kk in (("5h 重置", "h5_reset_local"), ("周重置", "week_reset_local"), ("banked", "banked")):
+            if a.get(kk) not in (None, ""):
+                p.text((x0 + 24, yy), _ellip(p, f"{l} {a[kk]}", 24, gw - 48), 24, False, 80)
+                yy += 34
     errs = (q.get("errors") or []) + (q.get("claude_errors") or [])
     if errs or q.get("anomalies"):
-        p.text((M, y), f"！异常 {len(errs) + len(q.get('anomalies') or [])} 条，看 Discord", 32, True)
+        p.text((M, y + 540), f"！异常 {len(errs) + len(q.get('anomalies') or [])} 条，看 Discord", 30, True)
 
 
 def page_hermes(p):
     ctx = p.ctx
     y = p.body_top
-    # ---- live sessions first: what is Hermes doing right now?
-    live = ctx.live_sessions()[:3]
+    lw = 640
+    live = ctx.live_sessions()[:4]
     now = datetime.now().timestamp()
-    p.text((M, y), "正在进行", 40, True)
-    y += 64
+    p.text((M, y), "正在进行", 38, True)
+    ly = y + 60
     if not live:
-        p.text((M, y), "没有进行中的会话", 32, False, 100)
-        y += 60
+        p.text((M, ly), "没有进行中的会话", 30, False, 100)
     for s in live:
         st = s.get("state")
         dark = st in ("approval", "input")
-        box = (M, y, W - M, y + 150)
+        box = (M, ly, M + lw, ly + 140)
         p.card(box, dark)
         fg = 255 if dark else 0
         label = {"approval": "等你批准", "input": "等你回答"}.get(st, "运行中")
-        p.text((M + 24, y + 18), f"{label} · {_plat(ctx, s)}", 38, True, fg)
-        p.text((W - M - 24, y + 22), _dur(now - (s.get("since") or now)), 30, False, 200 if dark else 80, "ra")
+        p.text((M + 22, ly + 16), f"{label} · {_plat(ctx, s)}", 34, True, fg)
+        p.text((M + lw - 22, ly + 20), _dur(now - (s.get("since") or now)), 28, False, 200 if dark else 80, "ra")
         line2 = s.get("detail") if dark else (f"工具 {s['tool']} · " if s.get("tool") else "") + (s.get("title") or s.get("id", ""))
-        p.text((M + 24, y + 86), _ellip(p, line2 or "", 30, W - 2 * M - 48), 30, False, fg)
-        y += 168
-    y += 6
+        p.text((M + 22, ly + 80), _ellip(p, line2 or "", 28, lw - 44), 28, False, fg)
+        ly += 156
+    rx = M + lw + 40
+    rw = CW - M - rx
+    ry = y
     si = ctx.sysinfo()
     if si:
         load, mem, disk = si
-        p.text((M, y), "OptiPlex", 40, True)
-        p.text((W - M, y + 4), "负载 " + " / ".join(load), 32, False, 50, "ra")
-        y += 70
+        p.text((rx, ry), "OptiPlex", 38, True)
+        p.text((rx + rw, ry + 4), "负载 " + " / ".join(load), 28, False, 50, "ra")
+        ry += 64
         for lab, v in (("内存", mem), ("磁盘", disk)):
-            p.text((M, y + 4), lab, 32)
-            p.bar(M + 110, y, W - 2 * M - 250, 44, v)
-            p.text((W - M, y + 4), f"{v*100:.0f}%", 36, True, anchor="ra")
-            y += 70
-    y += 10
-    p.d.line((M, y, W - M, y), fill=0, width=3)
-    y += 20
-    p.text((M, y), "接下来的定时任务", 40, True)
-    y += 70
+            p.text((rx, ry + 4), lab, 30)
+            p.bar(rx + 100, ry, rw - 230, 40, v)
+            p.text((rx + rw, ry + 2), f"{v*100:.0f}%", 34, True, anchor="ra")
+            ry += 62
+    ry += 10
+    p.d.line((rx, ry, rx + rw, ry), fill=0, width=3)
+    ry += 18
+    p.text((rx, ry), "接下来的定时任务", 38, True)
+    ry += 62
     today = datetime.now(ctx.TZ).date()
     for t_, n in ctx.next_jobs(8):
-        if y > H - TAB_H - 70:
+        if ry > H - 60:
             break
         when = t_.strftime("%H:%M") if t_.date() == today else t_.strftime("%-m/%-d %H:%M")
-        p.text((M, y), when, 32, True)
-        p.text((M + 230, y), _ellip(p, n, 32, W - 2 * M - 230), 32)
-        y += 58
+        p.text((rx, ry), when, 30, True)
+        p.text((rx + 190, ry), _ellip(p, n, 30, rw - 190), 30)
+        ry += 54
 
 
 def page_board(p):
@@ -429,19 +467,19 @@ def page_board(p):
     if not msgs:
         p.text((M, y + 40), "暂无留言", 40, False, 100)
         return
-    f = p.f(34)
+    f = p.f(32)
     for m in msgs:
-        if y > H - TAB_H - 120:
+        if y > H - 120:
             break
         head = ("★ 置顶 · " if m.get("pin") else "") + m.get("t", "")
-        p.text((M, y), head, 28, False, 80)
-        y += 42
-        for ln in ctx.wrap(p.d, m.get("text", ""), f, W - 2 * M, 3):
-            p.text((M, y), ln, 34)
-            y += 46
-        y += 14
-        p.d.line((M, y, W - M, y), fill=190, width=2)
-        y += 18
+        p.text((M, y), head, 26, False, 80)
+        y += 40
+        for ln in ctx.wrap(p.d, m.get("text", ""), f, CW - 2 * M, 3):
+            p.text((M, y), ln, 32)
+            y += 44
+        y += 12
+        p.d.line((M, y, CW - M, y), fill=190, width=2)
+        y += 16
 
 
 PAGES = {"home": page_home, "room": page_room, "weather": page_weather,
@@ -454,6 +492,7 @@ def build(ctx, name, msg=""):
     p = Page(ctx, name, msg)
     PAGES[name](p)
     p.chrome()
+    p.compose()
     return p
 
 
@@ -462,11 +501,9 @@ def stamp(ctx, name):
     now = datetime.now(ctx.TZ)
     parts = [name, f"{now:%H}{now.minute // 5}"]
     parts += [(ctx.state(e) or {}).get("state", "") for _, e, _ in remote.DEVICES]
-    if name == "room":
+    if name in ("room", "home"):
         parts += [(ctx.state(e) or {}).get("state", "") for e in (
-            os.environ.get("ROOM_TEMP_ENTITY", "sensor.0xa4c138294330ffff_temperature"),
-            os.environ.get("ROOM_HUM_ENTITY", "sensor.0xa4c138294330ffff_humidity"),
-            remote.TARGET_ENTITY, remote.AUTO_ENTITY)]
+            ROOM_TEMP, ROOM_HUM, remote.TARGET_ENTITY, remote.AUTO_ENTITY, remote.HTARGET_ENTITY, remote.HAUTO_ENTITY)]
     try:
         parts.append(open(ctx.BOARD, "rb").read().decode(errors="ignore"))
     except Exception:
@@ -479,6 +516,7 @@ def stamp(ctx, name):
 
 
 def map_tap(q):
+    """Raw touch (device portrait, normalised by the reported range) -> landscape canvas pixels."""
     def num(k, d=0):
         try:
             return float(q.get(k, [d])[0])
@@ -487,20 +525,18 @@ def map_tap(q):
     rx, ry = num("rx"), num("ry")
     nx = (rx - num("rxmin")) / max(1.0, num("rxmax", 1) - num("rxmin"))
     ny = (ry - num("rymin")) / max(1.0, num("rymax", 1) - num("rymin"))
-    if SWAP:
-        nx, ny = ny, nx
-    if INVX:
-        nx = 1 - nx
-    if INVY:
-        ny = 1 - ny
-    return int(nx * W), int(ny * H)
+    if PORT == "right":      # image was rotated clockwise
+        lx, ly = ny * W, (1 - nx) * H
+    else:                    # rotated counter-clockwise
+        lx, ly = (1 - ny) * W, nx * H
+    return int(lx), int(ly)
 
 
 def handle_tap(ctx, name, q):
     x, y = map_tap(q)
     p = build(ctx, name)
     hit = None
-    for x0, y0, x1, y1, action in reversed(p.zones):   # chrome zones were added last -> checked first
+    for x0, y0, x1, y1, action in reversed(p.full_zones):   # chrome/content zones last -> checked first
         if x0 <= x <= x1 and y0 <= y <= y1:
             hit = action
             break

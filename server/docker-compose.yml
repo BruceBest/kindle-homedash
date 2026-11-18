@@ -16,6 +16,9 @@ services:
       ROOM_HUM_ENTITY: sensor.0xa4c138294330ffff_humidity
       TARGET_TEMP_ENTITY: input_number.wo_shi_mu_biao_wen_du
       AUTO_HEAT_ENTITY: input_boolean.wo_shi_zi_dong_heng_wen
+      TARGET_HUM_ENTITY: input_number.wo_shi_mu_biao_shi_du
+      AUTO_HUM_ENTITY: input_boolean.wo_shi_zi_dong_jia_shi
+      LANDSCAPE_PORT: right     # right = Kindle USB port on the right; left = port on the left
     volumes:
       - /home/bruce/.config/hass/token:/run/secrets/ha_token:ro
       - /usr/share/fonts/opentype/noto:/fonts:ro

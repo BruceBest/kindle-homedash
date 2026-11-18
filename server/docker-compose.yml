@@ -1,0 +1,23 @@
+name: kindle-dash-server
+services:
+  kindle-dash:
+    build: .
+    container_name: kindle-dash
+    restart: unless-stopped
+    network_mode: host          # reach HA on 127.0.0.1:8123; serve LAN on :8765
+    environment:
+      HA_URL: http://127.0.0.1:8123
+      HA_TOKEN_FILE: /run/secrets/ha_token
+      PORT: "8765"
+      TZ_NAME: America/Detroit
+      WEATHER_ENTITY: weather.wo_de_jia
+      HUMIDIFIER_ENTITY: switch.wo_shi_jia_shi_qi_outlet
+      ROOM_TEMP_ENTITY: ""      # fill in after SNZB-02 is paired
+      ROOM_HUM_ENTITY: ""
+    volumes:
+      - /home/bruce/.config/hass/token:/run/secrets/ha_token:ro
+      - /usr/share/fonts/opentype/noto:/fonts:ro
+      # Hermes status (read-only): gateway_state.json, cron/jobs.json, disk stats
+      - /home/bruce/.hermes:/hermes:ro
+      - /home/bruce/plus-quota-watch-api.jsonl:/quota/plus-quota-watch-api.jsonl:ro
+      - /home/bruce/kindle-dash-server/board:/board:ro

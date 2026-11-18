@@ -1,0 +1,19 @@
+name: kindle-status
+description: "Publish live per-session state (running tool, waiting for approval/answer) to a JSON file for the Kindle panel."
+version: 0.1.0
+author: Bruce + Hermes
+license: MIT
+manifest_version: 2
+
+requires_hermes: ">=0.21"
+
+provides_hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - pre_approval_request
+  - post_approval_response
+  - on_human_input_request
+  - on_human_input_resolved
+  - agent_loop_stopped
+  - on_session_end

@@ -1,0 +1,28 @@
+name: zigbee
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    network_mode: host          # listens on 127.0.0.1:1883 only (see mosquitto.conf)
+    user: "1000:1000"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    container_name: zigbee2mqtt
+    restart: unless-stopped
+    network_mode: host          # frontend on :8099
+    depends_on: [mosquitto]
+    environment:
+      TZ: America/Detroit
+    group_add: ["20"]           # dialout -> access to the USB serial device
+    user: "1000:1000"
+    volumes:
+      - ./z2m/data:/app/data
+      - /run/udev:/run/udev:ro
+    devices:
+      - /dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_3c1f4920b33ff11194cf6e33b6df0e24-if00-port0:/dev/ttyZigbee

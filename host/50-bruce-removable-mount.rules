@@ -1,0 +1,15 @@
+// Allow user "bruce" to mount/unmount/eject REMOVABLE media via udisks without a password,
+// even from non-active sessions (e.g. Hermes). Does NOT cover system disks
+// (filesystem-mount-system) or loop/image setup (loop-setup). udisks forces nosuid,nodev.
+polkit.addRule(function(action, subject) {
+    if (subject.user == "bruce" &&
+        (action.id == "org.freedesktop.udisks2.filesystem-mount" ||
+         // Hermes runs outside the desktop seat, so udisks asks for "other-seat"
+         // even on this single-seat machine. Still removable media only.
+         action.id == "org.freedesktop.udisks2.filesystem-mount-other-seat" ||
+         action.id == "org.freedesktop.udisks2.filesystem-unmount-others" ||
+         action.id == "org.freedesktop.udisks2.eject-media" ||
+         action.id == "org.freedesktop.udisks2.power-off-drive")) {
+        return polkit.Result.YES;
+    }
+});

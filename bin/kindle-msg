@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Post a message to the Kindle dashboard "Hermes 留言" board.
+
+usage: kindle-msg "text" [--pin]   add a message (pinned ones stay on top)
+       kindle-msg --list           show current messages
+       kindle-msg --clear          remove all unpinned messages
+       kindle-msg --clear-all      remove everything
+       kindle-msg --rm N           remove message #N (from --list)
+"""
+import json, os, sys, tempfile
+from datetime import datetime
+
+BOARD = os.path.expanduser("~/kindle-dash-server/board/board.json")
+KEEP = 10
+
+
+def load():
+    try:
+        with open(BOARD) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save(msgs):
+    os.makedirs(os.path.dirname(BOARD), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(BOARD))
+    with os.fdopen(fd, "w") as f:
+        json.dump(msgs, f, ensure_ascii=False, indent=1)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, BOARD)
+
+
+def main(a):
+    msgs = load()
+    if not a or a[0] in ("-h", "--help"):
+        print(__doc__); return
+    if a[0] == "--list":
+        for i, m in enumerate(msgs, 1):
+            print(f"{i}. [{m['t']}]{' 📌' if m.get('pin') else ''} {m['text']}")
+        return
+    if a[0] == "--clear":
+        save([m for m in msgs if m.get("pin")]); return
+    if a[0] == "--clear-all":
+        save([]); return
+    if a[0] == "--rm":
+        i = int(a[1]) - 1
+        msgs.pop(i); save(msgs); return
+    pin = "--pin" in a
+    text = " ".join(x for x in a if x != "--pin").strip()
+    msgs.insert(0, {"t": datetime.now().strftime("%m-%d %H:%M"), "text": text, "pin": pin})
+    pinned = [m for m in msgs if m.get("pin")]
+    rest = [m for m in msgs if not m.get("pin")][:KEEP]
+    save(pinned + rest)
+    print("posted")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

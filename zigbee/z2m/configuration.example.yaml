@@ -1,0 +1,42 @@
+homeassistant:
+  enabled: true
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://127.0.0.1:1883
+serial:
+  port: /dev/ttyZigbee
+  adapter: ember
+frontend:
+  enabled: true
+  port: 8099
+advanced:
+  channel: 20
+  network_key: GENERATE
+    - 240
+    - 17
+    - 54
+    - 101
+    - 244
+    - 94
+    - 113
+    - 159
+    - 20
+    - 41
+    - 37
+    - 42
+    - 67
+    - 195
+    - 212
+    - 137
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+    - 74
+    - 43
+    - 52
+    - 56
+    - 34
+    - 246
+    - 189
+    - 222
+  log_level: info
+version: 5

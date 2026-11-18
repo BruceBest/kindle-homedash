@@ -1,0 +1,20 @@
+# runtime / private data
+server/board/board.json
+server/board/*.json
+**/__pycache__/
+*.pyc
+# build outputs
+client/hdnative-arm
+client/hdnative-host
+device/hdnative/hdnative
+# secrets / keys
+**/authkey
+*.key
+*.pem
+.env
+# screenshots / scratch
+*.png
+*.log
+zigbee/z2m/data/
+zigbee/mosquitto/data/
+device/hdnative/local.env

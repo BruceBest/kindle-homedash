@@ -37,7 +37,7 @@ DEFAULT_MODES = {
 # key -> (label, subtitle, temp_c, humidity_pct, heat_auto, hum_auto, devices_off); user-editable and persisted.
 MODES_FILE = os.environ.get("MODES_FILE", "/data/modes.json")
 MAX_MODES = 8
-NAME_PRESETS = ["傍晚", "午休", "阅读", "客人", "运动", "追剧", "冬夜", "清晨"]
+NAME_PRESETS = ["海边", "白天", "睡眠", "外出", "傍晚", "午休", "阅读", "客人", "运动", "追剧", "冬夜", "清晨"]
 MODES = dict(DEFAULT_MODES)
 EDIT = {"key": None}       # mode currently open in the editor (shared by Kindle and web)
 

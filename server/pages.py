@@ -244,7 +244,7 @@ def _climate_cards(ctx, back="/app/room"):
            '<div class="card"><div class="meta">室内</div><div class="row"><div class="c"><span class="name">—</span></div><div class="c r">')
     now += f'<div class="meta">湿度{dew}</div></div></div></div>'
     def stepper(label, val, unit, minus, plus, auto_action, auto_on, auto_label):
-        v = f"{val:.1f}{unit}" if unit == "°C" and val is not None else (f"{val:.0f}{unit}" if val is not None else "—")
+        v = (f"{val:.1f}{unit}" if unit == "°C" else (f"{val:.0f}-{val + 5:.0f}{unit}" if label == "目标湿度" else f"{val:.0f}{unit}")) if val is not None else "—"
         return (f'<div class="card"><div class="stepper"><div class="l">{label}</div><div class="v">'
                 f'{_act_form(minus, "−", "step", back)} {v} {_act_form(plus, "+", "step", back)}</div></div>'
                 f'<div style="margin-top:14px">{_act_form(auto_action, f"{auto_label} " + ("开" if auto_on else "关"), "on" if auto_on else "", back, "width:100%;font-size:32px")}</div></div>')

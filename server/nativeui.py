@@ -144,6 +144,45 @@ class Page:
         return buf.getvalue()
 
 
+# ------------------------------------------------------------ sleep screen
+_LOGO = None
+
+
+def _logo():
+    global _LOGO
+    if _LOGO is None:
+        try:
+            _LOGO = Image.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "404-logo-gray.png")).convert("L")
+        except OSError:
+            _LOGO = False
+    return _LOGO or None
+
+
+def render_sleep(ctx):
+    """Static 'asleep' screen: the 404nfound logo + a tiny status line (refreshed rarely by the device)."""
+    full = Image.new("L", (W, H), 255)
+    d = ImageDraw.Draw(full)
+    logo = _logo()
+    ly = 70
+    if logo:
+        s = 600
+        full.paste(logo.resize((s, s), Image.LANCZOS), ((W - s) // 2, ly))
+        ly += s
+    d.text((W // 2, ly + 50), "休眠中 · 按电源键唤醒", font=ctx.font(46, True), fill=0, anchor="mm")
+    now = datetime.now(ctx.TZ)
+    bits = [f"{now:%m-%d %H:%M}"]
+    th, hu = _room_c(ctx, ctx.state(ROOM_TEMP)), _num(ctx.state(ROOM_HUM))
+    if th is not None:
+        bits.append(f"{th:.1f}°C" + (f" {hu:.0f}%" if hu is not None else ""))
+    if BATT["lvl"] is not None and time.time() - BATT["ts"] < 7200:
+        bits.append(f"Kindle {BATT['lvl']}%")
+    d.text((W // 2, ly + 115), "  ·  ".join(bits), font=ctx.font(30, False), fill=110, anchor="mm")
+    img = full.rotate(-90 if PORT == "right" else 90, expand=True)
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    return buf.getvalue()
+
+
 # ----------------------------------------------------------------- helpers
 def _devices(ctx):
     out = []
@@ -680,6 +719,8 @@ def respond(ctx, path, q):
     """Returns (body, headers) for /n/* or None."""
     name = q.get("page", ["home"])[0]
     note_battery(q)
+    if path == "/n/sleep":
+        return render_sleep(ctx), {"Content-Type": "image/png"}
     if path == "/n/stamp":
         return stamp(ctx, name).encode(), {"Content-Type": "text/plain"}
     if path == "/n/tap":

@@ -22,6 +22,9 @@ Bedroom e-ink dashboard + remote for Home Assistant and Hermes, running on a jai
 ## Web app vs Kindle app
 The **web app (`/app`) is the full-featured, recommended interface** - open it on a phone or laptop (LAN or Tailscale). The Kindle native UI is a compact touch panel for quick everyday use: it can apply modes, nudge targets, and add/edit/delete modes, but it has no keyboard, so **free-text input (custom mode names) only works in the web app**; on the Kindle the 改名 button cycles through preset names. The Kindle editor shows a reminder about this.
 
+## Power button / sleep screen
+On the Kindle the power button toggles a low-power "asleep" state: the app is stopped, the screen shows the 404nfound logo (rendered by the server at `/n/sleep`, with a tiny time / room temperature line that is redrawn only every 30 minutes), and the CPU governor is set to `powersave`. Press again to wake. Wi-Fi stays on so the Kindle remains reachable over Tailscale.
+
 ## Build / run
 ```
 cd server && docker compose up -d --build

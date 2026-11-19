@@ -21,12 +21,12 @@ TARGET_ENTITY = os.environ.get("TARGET_TEMP_ENTITY", "input_number.wo_shi_mu_bia
 AUTO_ENTITY = os.environ.get("AUTO_HEAT_ENTITY", "input_boolean.wo_shi_zi_dong_heng_wen")
 HTARGET_ENTITY = os.environ.get("TARGET_HUM_ENTITY", "input_number.wo_shi_mu_biao_shi_du")
 HAUTO_ENTITY = os.environ.get("AUTO_HUM_ENTITY", "input_boolean.wo_shi_zi_dong_jia_shi")
-TARGET_MIN, TARGET_MAX = 16.0, 26.0
+TARGET_MIN, TARGET_MAX = 16.0, 30.0
 HTARGET_MIN, HTARGET_MAX = 30.0, 70.0
 # Climate modes: one tap sets target temperature, target humidity and the two auto switches.
 # key: (label, subtitle, temp_c, humidity_pct, heat_auto, hum_auto, devices_off)
 MODES = {
-    "beach": ("海边", "暖、润、有一点海风感", 25.5, 55, True, True, False),
+    "beach": ("海边", "几乎不穿也舒服", 28.0, 50, True, True, False),
     "day": ("白天", "清爽舒适", 22.0, 50, True, True, False),
     "sleep": ("睡眠", "凉一点，睡得好", 20.0, 45, True, True, False),
     "away": ("外出", "只防冻，不加湿", 16.0, 40, True, False, False),

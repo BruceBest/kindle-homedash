@@ -1,0 +1,112 @@
+# Climate automations exported from Home Assistant (config/automation/config API).
+# Helpers they depend on (create in HA UI: Settings > Devices > Helpers):
+#   input_number.wo_shi_mu_biao_wen_du   16-26 step 0.5 (C)   target temperature
+#   input_number.wo_shi_mu_biao_shi_du   30-70 step 5   (%)   target humidity
+#   input_boolean.wo_shi_zi_dong_heng_wen                     auto thermostat
+#   input_boolean.wo_shi_zi_dong_jia_shi                      auto humidify
+# Sensor: SONOFF SNZB-02UL via Zigbee2MQTT (HA shows degF). Heater/humidifier: HomeKit plugs.
+
+- id: heater_thermostat_target
+  alias: 卧室暖风机恒温（目标温度由 Kindle 设定）
+  description: 目标温度=input_number 卧室目标温度，回差±0.5°C；自动恒温开关关闭则不动作；传感器3小时无数据则关暖风机。
+  triggers:
+  - trigger: state
+    entity_id:
+    - sensor.0xa4c138294330ffff_temperature
+    - input_number.wo_shi_mu_biao_wen_du
+    - input_boolean.wo_shi_zi_dong_heng_wen
+  - trigger: time_pattern
+    minutes: /5
+  conditions:
+  - condition: state
+    entity_id: input_boolean.wo_shi_zi_dong_heng_wen
+    state: 'on'
+  actions:
+  - variables:
+      target: '{{ states(''input_number.wo_shi_mu_biao_wen_du'') | float(21) }}'
+      temp_c: '{{ ((states(''sensor.0xa4c138294330ffff_temperature'') | float(none))
+        - 32) * 5 / 9 if states(''sensor.0xa4c138294330ffff_temperature'') | float(none)
+        is not none else none }}'
+      fresh: '{{ (now() - states[''sensor.0xa4c138294330ffff_temperature''].last_reported).total_seconds()
+        < 10800 }}'
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ not fresh or temp_c is none }}'
+      sequence:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.wo_shi_qu_nuan_qi
+    - conditions:
+      - condition: template
+        value_template: '{{ temp_c < target - 0.5 }}'
+      sequence:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.wo_shi_qu_nuan_qi
+    - conditions:
+      - condition: template
+        value_template: '{{ temp_c > target + 0.5 }}'
+      sequence:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.wo_shi_qu_nuan_qi
+  mode: restart
+- id: heater_off_when_hot
+  alias: 卧室温度超过目标3°C自动关取暖器
+  description: 安全保险：每分钟检查，温度高于 目标+3°C 就关暖风机。不依赖自动恒温开关；不用 for 计时（传感器读数一直在变会让计时器不断重置）。
+  triggers:
+  - trigger: time_pattern
+    minutes: /1
+  - trigger: state
+    entity_id:
+    - sensor.0xa4c138294330ffff_temperature
+    - input_number.wo_shi_mu_biao_wen_du
+  conditions:
+  - condition: state
+    entity_id: switch.wo_shi_qu_nuan_qi
+    state: 'on'
+  - condition: template
+    value_template: '{{ ((states(''sensor.0xa4c138294330ffff_temperature'')|float(0))
+      - 32) * 5 / 9 > states(''input_number.wo_shi_mu_biao_wen_du'')|float(21) + 3
+      }}'
+  actions:
+  - action: switch.turn_off
+    target:
+      entity_id: switch.wo_shi_qu_nuan_qi
+  mode: single
+- id: humidifier_target
+  alias: 卧室自动加湿（目标湿度由 Kindle 设定）
+  description: 湿度低于 目标-5% 连续5分钟开加湿器；高于 目标+5% 关加湿器。自动加湿开关关闭则不动作。
+  triggers:
+  - trigger: state
+    entity_id:
+    - sensor.0xa4c138294330ffff_humidity
+    - input_number.wo_shi_mu_biao_shi_du
+    - input_boolean.wo_shi_zi_dong_jia_shi
+  - trigger: time_pattern
+    minutes: /5
+  conditions:
+  - condition: state
+    entity_id: input_boolean.wo_shi_zi_dong_jia_shi
+    state: 'on'
+  actions:
+  - variables:
+      target: '{{ states(''input_number.wo_shi_mu_biao_shi_du'')|float(45) }}'
+      hum: '{{ states(''sensor.0xa4c138294330ffff_humidity'')|float(none) }}'
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: '{{ hum is not none and hum < target - 5 }}'
+      sequence:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.wo_shi_jia_shi_qi_outlet
+    - conditions:
+      - condition: template
+        value_template: '{{ hum is not none and hum > target + 5 }}'
+      sequence:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.wo_shi_jia_shi_qi_outlet
+  mode: single

@@ -307,11 +307,11 @@ def page_room(p):
     p.button((x, y0 + 270, x + 486, y0 + 350), "自动恒温 " + ("开" if ton else "关"), ton, ("act", "auto:toggle"), 32)
     p.d.line((cx0 + 20, y0 + 385, CW - M - 20, y0 + 385), fill=190, width=2)
     hv_t = _num(ctx.state(remote.HTARGET_ENTITY))
-    _stepper(p, x, y0 + 415, "目标湿度", f"{hv_t:.0f}%" if hv_t is not None else "—", "htarget:-5", "htarget:+5")
+    _stepper(p, x, y0 + 415, "目标湿度", f"{hv_t:.0f}-{hv_t + 5:.0f}%" if hv_t is not None else "—", "htarget:-5", "htarget:+5")
     hon = (ctx.state(remote.HAUTO_ENTITY) or {}).get("state") == "on"
     p.button((x, y0 + 535, x + 486, y0 + 615), "自动加湿 " + ("开" if hon else "关"), hon, ("act", "hauto:toggle"), 32)
     if tv is not None and hv_t is not None:
-        p.text((x, y0 + 635), f"加湿：低于 {hv_t - 5:.0f}% 开 · 高于 {hv_t + 5:.0f}% 关", 24, False, 90)
+        p.text((x, y0 + 635), f"加湿：低于 {hv_t:.0f}% 开 · 高于 {hv_t + 5:.0f}% 关", 24, False, 90)
 
 
 def _dew_point(t, rh):
@@ -350,7 +350,7 @@ def page_modes(p):
         if k == "off":
             line = "暖风机 / 加湿器 关"
         else:
-            line = f"{t:.1f}°C · {h}%"
+            line = f"{t:.1f}°C · {h}-{h + 5}%"
         p.text((x0 + 26, y0 + 112), line, 40, True, fg)
         p.text((x0 + 26, y0 + 176), sub, 28, False, 200 if dark else 70)
         if k not in ("off",):
@@ -370,7 +370,7 @@ def page_modes(p):
     if th is not None and hu is not None:
         now_txt += f" · 露点 {_dew_point(th, hu):.0f}°C"
     p.text((M, sy + 22), now_txt, 34, True)
-    tgt_txt = f"目标 {tv:.1f}°C · {hv:.0f}%" if tv is not None and hv is not None else "目标 —"
+    tgt_txt = f"目标 {tv:.1f}°C · {hv:.0f}-{hv + 5:.0f}%" if tv is not None and hv is not None else "目标 —"
     mode_txt = remote.MODES[cur_key][0] if cur_key else "自定义"
     p.text((CW - M, sy + 22), f"{tgt_txt}  ·  模式：{mode_txt}", 34, False, 40, "ra")
 

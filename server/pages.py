@@ -260,7 +260,7 @@ def modes(ctx, msg=""):
     for i in range(0, len(items), 2):
         row = []
         for k, (name, sub, t, h, _ha, _hh, off) in items[i:i + 2]:
-            line = "暖风机 / 加湿器 关" if off else f"{t:.1f}°C · {h}%"
+            line = "暖风机 / 加湿器 关" if off else f"{t:.1f}°C · {h}-{h + 5}%"
             dew = "" if off else f'<span class="sb">露点 {nativeui._dew_point(t, h):.0f}°C</span>'
             tag = '<span class="sb"><b>当前</b></span>' if k == cur else ""
             row.append(f'<td><form method="post" action="/remote/act" style="margin:0"><input type="hidden" name="back" value="/app/modes">'
@@ -274,7 +274,7 @@ def modes(ctx, msg=""):
     tv = nativeui._num(ctx.state(remote.TARGET_ENTITY))
     hv = nativeui._num(ctx.state(remote.HTARGET_ENTITY))
     now = (f"现在 {th:.1f}°C · {hu:.0f}%" + f" · 露点 {nativeui._dew_point(th, hu):.0f}°C") if th is not None and hu is not None else "现在 —"
-    tgt = f"目标 {tv:.1f}°C · {hv:.0f}%" if tv is not None and hv is not None else "目标 —"
+    tgt = f"目标 {tv:.1f}°C · {hv:.0f}-{hv + 5:.0f}%" if tv is not None and hv is not None else "目标 —"
     mode = remote.MODES[cur][0] if cur else "自定义"
     body = (f'<table class="modes">{"".join(cells)}</table>'
             f'<div class="card" style="margin-top:14px"><div class="meta" style="font-size:30px">{now}</div>'

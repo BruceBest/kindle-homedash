@@ -77,7 +77,7 @@
   mode: single
 - id: humidifier_target
   alias: 卧室自动加湿（目标湿度由 Kindle 设定）
-  description: 湿度低于 目标-5% 连续5分钟开加湿器；高于 目标+5% 关加湿器。自动加湿开关关闭则不动作。
+  description: 湿度湿度低于 目标 开加湿器；高于 目标+5% 关加湿器（即保持在 目标~目标+5%）。自动加湿开关关闭则不动作。
   triggers:
   - trigger: state
     entity_id:
@@ -97,7 +97,7 @@
   - choose:
     - conditions:
       - condition: template
-        value_template: '{{ hum is not none and hum < target - 5 }}'
+        value_template: '{{ hum is not none and hum < target }}'
       sequence:
       - action: switch.turn_on
         target:

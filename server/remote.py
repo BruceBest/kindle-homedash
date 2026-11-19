@@ -26,8 +26,8 @@ HTARGET_MIN, HTARGET_MAX = 30.0, 70.0
 # Climate modes: one tap sets target temperature, target humidity and the two auto switches.
 # key: (label, subtitle, temp_c, humidity_pct, heat_auto, hum_auto, devices_off)
 MODES = {
-    "beach": ("海边", "几乎不穿也舒服", 28.0, 50, True, True, False),
-    "day": ("白天", "清爽舒适", 22.0, 50, True, True, False),
+    "beach": ("海边", "24°C 偏干爽的海边", 24.0, 40, True, True, False),
+    "day": ("白天", "清爽舒适", 22.0, 40, True, True, False),
     "sleep": ("睡眠", "凉一点，睡得好", 20.0, 45, True, True, False),
     "away": ("外出", "只防冻，不加湿", 16.0, 40, True, False, False),
     "off": ("全关", "暖风机和加湿器都关", 21.0, 45, False, False, True),

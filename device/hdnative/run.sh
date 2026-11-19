@@ -15,6 +15,9 @@ restore() {
     [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null
     rm -f /tmp/hdnative.pid
     lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
+    # the stock UI needs ~10-20 s to come back; say so instead of leaving a frozen dashboard on screen
+    FBINK=/mnt/us/libkh/bin/fbink
+    [ -x "$FBINK" ] && "$FBINK" -q -c -m -y 12 "Exiting - Kindle home returns in about 20 seconds..." 2>/dev/null
     start lab126_gui 2>/dev/null || start framework 2>/dev/null
     exit 0
 }

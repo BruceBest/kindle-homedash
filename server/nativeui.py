@@ -16,6 +16,7 @@ back. Which way the Kindle is turned is set with env LANDSCAPE_PORT:
   GET /n/stamp?page=home           -> change token; client redraws when it changes
 """
 import hashlib
+import time
 import io
 import os
 from datetime import datetime
@@ -35,6 +36,17 @@ PORT = os.environ.get("LANDSCAPE_PORT", "right")   # right | left
 
 ROOM_TEMP = os.environ.get("ROOM_TEMP_ENTITY", "sensor.0xa4c138294330ffff_temperature")
 ROOM_HUM = os.environ.get("ROOM_HUM_ENTITY", "sensor.0xa4c138294330ffff_humidity")
+
+
+BATT = {"lvl": None, "chg": False, "ts": 0.0}   # last battery report from the Kindle client (query: bat, chg)
+
+
+def note_battery(q):
+    try:
+        lvl = int(float(q.get("bat", [""])[0]))
+    except (TypeError, ValueError):
+        return
+    BATT.update(lvl=max(0, min(100, lvl)), chg=q.get("chg", ["0"])[0] in ("1", "true", "True"), ts=time.time())
 
 
 class Page:
@@ -82,6 +94,15 @@ class Page:
             self.text((400, 50), "退出", 30, True, anchor="mm")
             self.zone((320, 0, 480, TOP), ("exit",))
         self.text((CW - M, 50), f"{now:%m-%d %H:%M}", 30, False, 60, "rm")
+        if BATT["lvl"] is not None and time.time() - BATT["ts"] < 1800:
+            lvl = BATT["lvl"]
+            bx, by = CW - M - 330, 36            # battery icon: 46x24 body + nub, filled to level
+            self.d.rounded_rectangle((bx, by, bx + 46, by + 26), 5, outline=0, width=3)
+            self.d.rectangle((bx + 46, by + 8, bx + 50, by + 18), fill=0)
+            fw = int(38 * lvl / 100)
+            if fw > 0:
+                self.d.rectangle((bx + 4, by + 4, bx + 4 + fw, by + 22), fill=0)
+            self.text((bx + 62, 50), f"{lvl}%" + (" 充电中" if BATT["chg"] else ""), 28, lvl <= 15 and not BATT["chg"], 0, "lm")
         self.zone((CW - 320, 0, CW, TOP), ("refresh",))
         self.d.line((0, TOP, CW, TOP), fill=0, width=4)
         if self.msg:
@@ -658,6 +679,7 @@ def handle_tap(ctx, name, q):
 def respond(ctx, path, q):
     """Returns (body, headers) for /n/* or None."""
     name = q.get("page", ["home"])[0]
+    note_battery(q)
     if path == "/n/stamp":
         return stamp(ctx, name).encode(), {"Content-Type": "text/plain"}
     if path == "/n/tap":

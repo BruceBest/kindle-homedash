@@ -8,6 +8,7 @@ Works in the Kindle experimental browser (old WebKit) and on phones.
 """
 import html
 import ipaddress
+import json
 import os
 from datetime import datetime
 
@@ -25,13 +26,59 @@ TARGET_MIN, TARGET_MAX = 16.0, 30.0
 HTARGET_MIN, HTARGET_MAX = 30.0, 70.0
 # Climate modes: one tap sets target temperature, target humidity and the two auto switches.
 # key: (label, subtitle, temp_c, humidity_pct, heat_auto, hum_auto, devices_off)
-MODES = {
-    "beach": ("海边", "24°C 偏干爽的海边", 24.0, 40, True, True, False),
-    "day": ("白天", "清爽舒适", 22.0, 40, True, True, False),
-    "sleep": ("睡眠", "凉一点，睡得好", 20.0, 45, True, True, False),
+DEFAULT_MODES = {
+    "beach": ("海边", "26°C 暖一点，几乎不穿也舒服", 26.0, 40, True, True, False),
+    "day": ("白天", "清爽舒适", 24.0, 40, True, True, False),
+    "sleep": ("睡眠", "略凉，睡得好", 22.0, 45, True, True, False),
     "away": ("外出", "只防冻，不加湿", 16.0, 40, True, False, False),
     "off": ("全关", "暖风机和加湿器都关", 21.0, 45, False, False, True),
 }
+EDITABLE_MODES = ("beach", "day", "sleep", "away")   # shown on the settings page
+MODES_FILE = os.environ.get("MODES_FILE", "/data/modes.json")   # persisted temp/humidity overrides
+MODES = dict(DEFAULT_MODES)
+
+
+def _load_modes():
+    try:
+        ov = json.load(open(MODES_FILE))
+    except Exception:
+        ov = {}
+    for k, v in ov.items():
+        if k in EDITABLE_MODES and k in DEFAULT_MODES:
+            n, s, _, _, ha_, hh_, off = DEFAULT_MODES[k]
+            MODES[k] = (n, s, float(v[0]), int(v[1]), ha_, hh_, off)
+
+
+def _save_modes():
+    try:
+        os.makedirs(os.path.dirname(MODES_FILE), exist_ok=True)
+        json.dump({k: [MODES[k][2], MODES[k][3]] for k in EDITABLE_MODES if MODES[k][2:4] != DEFAULT_MODES[k][2:4]},
+                  open(MODES_FILE, "w"))
+    except Exception as e:
+        print("save modes failed:", e, flush=True)
+
+
+def edit_mode(key, field, delta):
+    if key not in EDITABLE_MODES:
+        return False
+    n, s, t, h, ha_, hh_, off = MODES[key]
+    if field == "t":
+        t = round(min(TARGET_MAX, max(TARGET_MIN, t + delta)) * 2) / 2
+    elif field == "h":
+        h = int(min(HTARGET_MAX, max(HTARGET_MIN, round((h + delta) / 5) * 5)))
+    else:
+        return False
+    MODES[key] = (n, s, t, h, ha_, hh_, off)
+    _save_modes()
+    return True
+
+
+def reset_modes():
+    MODES.update(DEFAULT_MODES)
+    _save_modes()
+
+
+_load_modes()
 SCENES = {
     "sleep": ("睡前", {"hum": "on", "heat": "on"}),
     "warm": ("只取暖", {"heat": "on"}),
@@ -103,6 +150,15 @@ def act(ha, action):
         if devices_off:
             for ent in ents.values():
                 ha("/api/services/switch/turn_off", {"entity_id": ent})
+        return True
+    if kind == "mset":      # mset:<mode>:<t|h>:<delta>
+        try:
+            key, field, delta = arg.split(":")
+            return edit_mode(key, field, float(delta))
+        except ValueError:
+            return False
+    if kind == "mreset":
+        reset_modes()
         return True
     if kind == "scene" and arg in SCENES:
         for k, st in SCENES[arg][1].items():

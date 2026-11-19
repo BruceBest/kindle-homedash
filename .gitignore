@@ -18,3 +18,4 @@ device/hdnative/hdnative
 zigbee/z2m/data/
 zigbee/mosquitto/data/
 device/hdnative/local.env
+server/data/

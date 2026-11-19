@@ -15,6 +15,7 @@ Bedroom e-ink dashboard + remote for Home Assistant and Hermes, running on a jai
 ## Features
 - **Native Kindle UI** is landscape (sidebar tabs). Set `LANDSCAPE_PORT=right|left` (server env) to match which side the Kindle's USB port is on.
 - **Bedroom**: live temperature/humidity (C), target temperature (16-30 C, 0.5 steps) and target humidity (30-70 %, 5 steps) steppers, auto-thermostat / auto-humidify switches.
+- **Settings page** (`/app/settings`, 设置 tab): edit each mode's target temperature and humidity band; stored in `server/data/modes.json` (mounted at `/data`), "恢复默认" resets.
 - **Modes page**: one tap sets both targets and the auto switches (beach / day / sleep / away / all off). The same controls exist in the browser app (`/app/room`, `/app/modes`; phone-friendly).
 - Errors are shown as a banner; successful actions are silent.
 - Access is limited to LAN / Tailscale / localhost (no public exposure, no login).

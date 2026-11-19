@@ -29,7 +29,7 @@ SB = 190                   # left sidebar width (tabs)
 CW = W - SB                # content width
 M = 30
 TOP = 100                  # header height inside the content area
-TABS = [("home", "首页"), ("room", "卧室"), ("modes", "模式"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
+TABS = [("home", "首页"), ("room", "卧室"), ("modes", "模式"), ("settings", "设置"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
 TITLES = dict(TABS) | {"home": "卧室面板"}
 PORT = os.environ.get("LANDSCAPE_PORT", "right")   # right | left
 
@@ -541,7 +541,30 @@ def page_board(p):
         y += 16
 
 
-PAGES = {"home": page_home, "room": page_room, "modes": page_modes, "weather": page_weather,
+def _mini(p, x, y, txt, minus, plus):
+    p.button((x, y, x + 90, y + 100), "−", False, ("act", minus), 60)
+    p.text((x + 215, y + 50), txt, 40, True, anchor="mm")
+    p.button((x + 340, y, x + 430, y + 100), "+", False, ("act", plus), 60)
+
+
+def page_settings(p):
+    y = p.body_top
+    p.text((M, y + 4), "模式设置：调整每个模式的目标温度和湿度，点“模式”页应用", 28, False, 70)
+    y += 56
+    p.text((M + 415, y + 20), "目标温度", 28, True, anchor="mm")
+    p.text((M + 935, y + 20), "目标湿度", 28, True, anchor="mm")
+    y += 50
+    for k in remote.EDITABLE_MODES:
+        name, _sub, t, h, *_ = remote.MODES[k]
+        p.card((M, y, CW - M, y + 140))
+        p.text((M + 24, y + 70), name, 52, True, anchor="lm")
+        _mini(p, M + 200, y + 20, f"{t:.1f}°C", f"mset:{k}:t:-0.5", f"mset:{k}:t:0.5")
+        _mini(p, M + 720, y + 20, f"{h}-{h + 5}%", f"mset:{k}:h:-5", f"mset:{k}:h:5")
+        y += 156
+    p.button((M, y + 6, M + 360, y + 106), "恢复默认", False, ("act", "mreset:all"), 36)
+
+
+PAGES = {"home": page_home, "room": page_room, "modes": page_modes, "settings": page_settings, "weather": page_weather,
          "quota": page_quota, "hermes": page_hermes, "board": page_board}
 
 
@@ -560,9 +583,10 @@ def stamp(ctx, name):
     now = datetime.now(ctx.TZ)
     parts = [name, f"{now:%H}{now.minute // 5}"]
     parts += [(ctx.state(e) or {}).get("state", "") for _, e, _ in remote.DEVICES]
-    if name in ("room", "home", "modes"):
+    if name in ("room", "home", "modes", "settings"):
         parts += [(ctx.state(e) or {}).get("state", "") for e in (
             ROOM_TEMP, ROOM_HUM, remote.TARGET_ENTITY, remote.AUTO_ENTITY, remote.HTARGET_ENTITY, remote.HAUTO_ENTITY)]
+    parts.append(repr([remote.MODES[k][2:4] for k in remote.EDITABLE_MODES]))
     try:
         parts.append(open(ctx.BOARD, "rb").read().decode(errors="ignore"))
     except Exception:

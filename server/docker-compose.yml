@@ -20,6 +20,7 @@ services:
       AUTO_HUM_ENTITY: input_boolean.wo_shi_zi_dong_jia_shi
       LANDSCAPE_PORT: right     # right = Kindle USB port on the right; left = port on the left
     volumes:
+      - ./data:/data                      # persisted mode settings (modes.json)
       - /home/bruce/.config/hass/token:/run/secrets/ha_token:ro
       - /usr/share/fonts/opentype/noto:/fonts:ro
       # Hermes status (read-only): gateway_state.json, cron/jobs.json, disk stats

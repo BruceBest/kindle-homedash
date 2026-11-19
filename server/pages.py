@@ -16,7 +16,7 @@ from datetime import datetime
 import nativeui
 import remote
 
-TABS = [("", "首页"), ("room", "卧室"), ("modes", "模式"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
+TABS = [("", "首页"), ("room", "卧室"), ("modes", "模式"), ("settings", "设置"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
 
 CSS = """
 *{box-sizing:border-box}
@@ -282,6 +282,20 @@ def modes(ctx, msg=""):
     return _shell("modes", "模式", body, ctx, msg=msg)
 
 
+def settings(ctx, msg=""):
+    rows = []
+    for k in remote.EDITABLE_MODES:
+        name, _sub, t, h, *_ = remote.MODES[k]
+        rows.append(f'<div class="card"><div class="meta" style="font-size:36px;font-weight:bold;color:#000">{name}</div>'
+                    f'<div class="stepper"><div class="l">温度</div><div class="v">{_act_form(f"mset:{k}:t:-0.5", "−", "step", "/app/settings")} '
+                    f'{t:.1f}°C {_act_form(f"mset:{k}:t:0.5", "+", "step", "/app/settings")}</div></div>'
+                    f'<div class="stepper"><div class="l">湿度</div><div class="v">{_act_form(f"mset:{k}:h:-5", "−", "step", "/app/settings")} '
+                    f'{h}-{h + 5}% {_act_form(f"mset:{k}:h:5", "+", "step", "/app/settings")}</div></div></div>')
+    body = ('<div class="meta" style="font-size:28px;margin-bottom:12px">调整每个模式的目标，到“模式”页点一下应用。</div>'
+            + "".join(rows) + _act_form("mreset:all", "恢复默认", "", "/app/settings", "width:100%;font-size:32px"))
+    return _shell("settings", "设置", body, ctx, msg=msg)
+
+
 def room(ctx, msg=""):
     cards = []
     for key, label, s, on, off in _device_rows(ctx):
@@ -394,7 +408,7 @@ def board_page(ctx, msg=""):
     return _shell("board", "Hermes 留言", body, ctx, 60, msg)
 
 
-ROUTES = {"": summary, "room": room, "modes": modes, "weather": weather, "quota": quota, "hermes": hermes, "board": board_page}
+ROUTES = {"": summary, "room": room, "modes": modes, "settings": settings, "weather": weather, "quota": quota, "hermes": hermes, "board": board_page}
 
 
 def render(sub, ctx, msg=""):

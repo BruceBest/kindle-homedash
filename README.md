@@ -19,6 +19,9 @@ Bedroom e-ink dashboard + remote for Home Assistant and Hermes, running on a jai
 - Errors are shown as a banner; successful actions are silent.
 - Access is limited to LAN / Tailscale / localhost (no public exposure, no login).
 
+## Web app vs Kindle app
+The **web app (`/app`) is the full-featured, recommended interface** - open it on a phone or laptop (LAN or Tailscale). The Kindle native UI is a compact touch panel for quick everyday use: it can apply modes, nudge targets, and add/edit/delete modes, but it has no keyboard, so **free-text input (custom mode names) only works in the web app**; on the Kindle the 改名 button cycles through preset names. The Kindle editor shows a reminder about this.
+
 ## Build / run
 ```
 cd server && docker compose up -d --build

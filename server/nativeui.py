@@ -383,6 +383,7 @@ def page_modes(p):
         box = (M, ey, CW - M, ey + 218)
         p.card(box)
         p.text((M + 24, ey + 14), f"编辑：{name}", 40, True)
+        p.text((M + 24 + 40 * (len(name) + 3), ey + 34), "自由改名等完整编辑请用网页版", 22, False, 100, "lm")
         bx = CW - M - 18
         for lab, act, w in (("恢复默认", "mreset:all", 190), ("删除", f"mdel:{sel}", 120), ("改名", f"mrename:{sel}", 120)):
             p.button((bx - w, ey + 12, bx, ey + 70), lab, False, ("act", act), 28)

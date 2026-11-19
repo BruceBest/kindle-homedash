@@ -19,6 +19,8 @@ restore() {
     FBINK=/mnt/us/libkh/bin/fbink
     [ -x "$FBINK" ] && "$FBINK" -q -c -m -y 12 "Exiting - Kindle home returns in about 20 seconds..." 2>/dev/null
     start lab126_gui 2>/dev/null || start framework 2>/dev/null
+    # after the stock UI is up, ask it to open Home so the e-ink repaints without a tap
+    ( sleep 15; lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home >/dev/null 2>&1 ) &
     exit 0
 }
 trap restore INT TERM

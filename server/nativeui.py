@@ -29,7 +29,7 @@ SB = 190                   # left sidebar width (tabs)
 CW = W - SB                # content width
 M = 30
 TOP = 100                  # header height inside the content area
-TABS = [("home", "首页"), ("room", "卧室"), ("modes", "模式"), ("settings", "设置"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
+TABS = [("home", "首页"), ("room", "卧室"), ("modes", "模式"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
 TITLES = dict(TABS) | {"home": "卧室面板"}
 PORT = os.environ.get("LANDSCAPE_PORT", "right")   # right | left
 
@@ -332,35 +332,70 @@ def _current_mode(ctx):
     return None
 
 
+def _mini(p, x, y, txt, minus, plus):
+    p.button((x, y, x + 90, y + 100), "−", False, ("act", minus), 60)
+    p.text((x + 215, y + 50), txt, 40, True, anchor="mm")
+    p.button((x + 340, y, x + 430, y + 100), "+", False, ("act", plus), 60)
+
+
 def page_modes(p):
     ctx = p.ctx
     y = p.body_top
     cur_key = _current_mode(ctx)
-    gap = 20
-    gw, gh = (CW - 2 * M - 2 * gap) // 3, 290
-    for i, (k, (name, sub, t, h, _ha, _hh, off)) in enumerate(remote.MODES.items()):
+    sel = remote.EDIT["key"] if remote.EDIT["key"] in remote.MODES else None
+    gap = 14
+    gw, gh = (CW - 2 * M - 2 * gap) // 3, 168
+    tiles = list(remote.MODES.items())
+    if len(tiles) < remote.MAX_MODES:
+        tiles.append((None, None))
+    for i, (k, v) in enumerate(tiles):
         col, row = i % 3, i // 3
-        x0 = M + col * (gw + gap)
-        y0 = y + row * (gh + gap)
+        x0, y0 = M + col * (gw + gap), y + row * (gh + gap)
         box = (x0, y0, x0 + gw, y0 + gh)
+        if k is None:
+            p.card(box)
+            p.text(((box[0] + box[2]) // 2, (box[1] + box[3]) // 2), "＋ 新增模式", 44, True, anchor="mm")
+            p.zone(box, ("act", "madd:new"))
+            continue
+        name, sub, t, h, _ha, _hh, off = v
         dark = k == cur_key
-        p.card(box, dark)
         fg = 255 if dark else 0
-        p.text((x0 + 26, y0 + 24), name, 56, True, fg)
-        if k == "off":
-            line = "暖风机 / 加湿器 关"
-        else:
-            line = f"{t:.1f}°C · {h}-{h + 5}%"
-        p.text((x0 + 26, y0 + 112), line, 40, True, fg)
-        p.text((x0 + 26, y0 + 176), sub, 28, False, 200 if dark else 70)
-        if k not in ("off",):
-            td = _dew_point(t, h)
-            p.text((x0 + 26, y0 + 222), f"露点 {td:.0f}°C", 26, False, 200 if dark else 90)
-        if dark:
-            p.text((x0 + gw - 26, y0 + 28), "当前", 30, True, 255, "ra")
+        p.card(box, dark)
+        p.text((x0 + 22, y0 + 14), name, 46, True, fg)
+        line = "暖风机 / 加湿器 关" if off else f"{t:.1f}°C · {h}-{h + 5}%"
+        p.text((x0 + 22, y0 + 76), line, 34, True, fg)
+        p.text((x0 + 22, y0 + 122), (sub[:10] if off else f"{sub[:9]}  露点{_dew_point(t, h):.0f}°C"), 24, False, 200 if dark else 80)
         p.zone(box, ("act", f"mode:{k}"))
-    # status strip
-    sy = y + 2 * (gh + gap) + 6
+        if dark:
+            p.text((x0 + gw - 128, y0 + 38), "当前", 26, True, 255, "rm")
+        if not off:
+            eb = (x0 + gw - 112, y0 + 12, x0 + gw - 12, y0 + 64)
+            on = k == sel
+            ol = 255 if dark else 0
+            p.d.rounded_rectangle(eb, 12, outline=ol, width=3, fill=(ol if on else None))
+            p.text(((eb[0] + eb[2]) // 2, (eb[1] + eb[3]) // 2), "编辑中" if on else "编辑", 26, True,
+                   (0 if dark else 255) if on else ol, "mm")
+            p.zone(eb, ("act", f"msel:{k}"))
+    rows = (len(tiles) + 2) // 3
+    ey = y + rows * (gh + gap) + 6
+    if sel and remote.editable(sel):
+        name, _s, t, h, *_ = remote.MODES[sel]
+        box = (M, ey, CW - M, ey + 218)
+        p.card(box)
+        p.text((M + 24, ey + 14), f"编辑：{name}", 40, True)
+        bx = CW - M - 18
+        for lab, act, w in (("恢复默认", "mreset:all", 190), ("删除", f"mdel:{sel}", 120), ("改名", f"mrename:{sel}", 120)):
+            p.button((bx - w, ey + 12, bx, ey + 70), lab, False, ("act", act), 28)
+            bx -= w + 12
+        p.text((M + 24, ey + 150), "温度", 28, True, anchor="lm")
+        _mini(p, M + 100, ey + 100, f"{t:.1f}°C", f"mset:{sel}:t:-0.5", f"mset:{sel}:t:0.5")
+        p.text((M + 600, ey + 150), "湿度", 28, True, anchor="lm")
+        _mini(p, M + 676, ey + 100, f"{h}-{h + 5}%", f"mset:{sel}:h:-5", f"mset:{sel}:h:5")
+        sy = ey + 238
+    else:
+        p.text((M, ey + 14), "点模式卡片右上角的“编辑”可调整它的温度/湿度、改名或删除；“＋ 新增模式”添加。", 26, False, 90)
+        sy = ey + 62
+    sy = min(sy, H - 110)
     th = _room_c(ctx, ctx.state(ROOM_TEMP))
     hu = _num(ctx.state(ROOM_HUM))
     tv = _num(ctx.state(remote.TARGET_ENTITY))
@@ -369,10 +404,10 @@ def page_modes(p):
     now_txt = f"现在 {th:.1f}°C · {hu:.0f}%" if th is not None and hu is not None else "现在 —"
     if th is not None and hu is not None:
         now_txt += f" · 露点 {_dew_point(th, hu):.0f}°C"
-    p.text((M, sy + 22), now_txt, 34, True)
+    p.text((M, sy + 18), now_txt, 32, True)
     tgt_txt = f"目标 {tv:.1f}°C · {hv:.0f}-{hv + 5:.0f}%" if tv is not None and hv is not None else "目标 —"
     mode_txt = remote.MODES[cur_key][0] if cur_key else "自定义"
-    p.text((CW - M, sy + 22), f"{tgt_txt}  ·  模式：{mode_txt}", 34, False, 40, "ra")
+    p.text((CW - M, sy + 18), f"{tgt_txt}  ·  模式：{mode_txt}", 32, False, 40, "ra")
 
 
 def page_weather(p):
@@ -541,30 +576,7 @@ def page_board(p):
         y += 16
 
 
-def _mini(p, x, y, txt, minus, plus):
-    p.button((x, y, x + 90, y + 100), "−", False, ("act", minus), 60)
-    p.text((x + 215, y + 50), txt, 40, True, anchor="mm")
-    p.button((x + 340, y, x + 430, y + 100), "+", False, ("act", plus), 60)
-
-
-def page_settings(p):
-    y = p.body_top
-    p.text((M, y + 4), "模式设置：调整每个模式的目标温度和湿度，点“模式”页应用", 28, False, 70)
-    y += 56
-    p.text((M + 415, y + 20), "目标温度", 28, True, anchor="mm")
-    p.text((M + 935, y + 20), "目标湿度", 28, True, anchor="mm")
-    y += 50
-    for k in remote.EDITABLE_MODES:
-        name, _sub, t, h, *_ = remote.MODES[k]
-        p.card((M, y, CW - M, y + 140))
-        p.text((M + 24, y + 70), name, 52, True, anchor="lm")
-        _mini(p, M + 200, y + 20, f"{t:.1f}°C", f"mset:{k}:t:-0.5", f"mset:{k}:t:0.5")
-        _mini(p, M + 720, y + 20, f"{h}-{h + 5}%", f"mset:{k}:h:-5", f"mset:{k}:h:5")
-        y += 156
-    p.button((M, y + 6, M + 360, y + 106), "恢复默认", False, ("act", "mreset:all"), 36)
-
-
-PAGES = {"home": page_home, "room": page_room, "modes": page_modes, "settings": page_settings, "weather": page_weather,
+PAGES = {"home": page_home, "room": page_room, "modes": page_modes, "weather": page_weather,
          "quota": page_quota, "hermes": page_hermes, "board": page_board}
 
 
@@ -583,10 +595,10 @@ def stamp(ctx, name):
     now = datetime.now(ctx.TZ)
     parts = [name, f"{now:%H}{now.minute // 5}"]
     parts += [(ctx.state(e) or {}).get("state", "") for _, e, _ in remote.DEVICES]
-    if name in ("room", "home", "modes", "settings"):
+    if name in ("room", "home", "modes"):
         parts += [(ctx.state(e) or {}).get("state", "") for e in (
             ROOM_TEMP, ROOM_HUM, remote.TARGET_ENTITY, remote.AUTO_ENTITY, remote.HTARGET_ENTITY, remote.HAUTO_ENTITY)]
-    parts.append(repr([remote.MODES[k][2:4] for k in remote.EDITABLE_MODES]))
+    parts.append(repr(list(remote.MODES.items())) + str(remote.EDIT["key"]))
     try:
         parts.append(open(ctx.BOARD, "rb").read().decode(errors="ignore"))
     except Exception:

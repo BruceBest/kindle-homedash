@@ -534,7 +534,10 @@ class Handler(BaseHTTPRequestHandler):
         n = min(int(self.headers.get("Content-Length") or 0), 4096)
         form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", "replace"))
         try:
-            ok = remote.act(ha, form.get("a", [""])[0])
+            action = form.get("a", [""])[0]
+            if action.startswith("mname:") and form.get("name"):
+                action = action + ":" + form["name"][0]
+            ok = remote.act(ha, action)
             msg = "" if ok else "无效操作"
         except Exception as e:
             msg = f"失败: {type(e).__name__}"

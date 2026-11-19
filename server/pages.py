@@ -16,7 +16,7 @@ from datetime import datetime
 import nativeui
 import remote
 
-TABS = [("", "首页"), ("room", "卧室"), ("modes", "模式"), ("settings", "设置"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
+TABS = [("", "首页"), ("room", "卧室"), ("modes", "模式"), ("weather", "天气"), ("quota", "额度"), ("hermes", "Hermes"), ("board", "留言")]
 
 CSS = """
 *{box-sizing:border-box}
@@ -255,6 +255,7 @@ def _climate_cards(ctx, back="/app/room"):
 
 def modes(ctx, msg=""):
     cur = nativeui._current_mode(ctx)
+    sel = remote.EDIT["key"] if remote.EDIT["key"] in remote.MODES else None
     cells = []
     items = list(remote.MODES.items())
     for i in range(0, len(items), 2):
@@ -263,9 +264,12 @@ def modes(ctx, msg=""):
             line = "暖风机 / 加湿器 关" if off else f"{t:.1f}°C · {h}-{h + 5}%"
             dew = "" if off else f'<span class="sb">露点 {nativeui._dew_point(t, h):.0f}°C</span>'
             tag = '<span class="sb"><b>当前</b></span>' if k == cur else ""
+            edit = ("" if off else f'<form method="post" action="/remote/act" style="margin:6px 0 0"><input type="hidden" name="back" value="/app/modes">'
+                    f'<button class="{"on" if k == sel else ""}" name="a" value="msel:{k}" type="submit" style="min-height:0;padding:10px;font-size:28px;text-align:center">'
+                    f'{"编辑中" if k == sel else "编辑"}</button></form>')
             row.append(f'<td><form method="post" action="/remote/act" style="margin:0"><input type="hidden" name="back" value="/app/modes">'
                        f'<button class="{"on" if k == cur else ""}" name="a" value="mode:{k}" type="submit">'
-                       f'<span class="n">{name}</span><span class="tv">{line}</span><span class="sb">{_e(sub)}</span>{dew}{tag}</button></form></td>')
+                       f'<span class="n">{_e(name)}</span><span class="tv">{line}</span><span class="sb">{_e(sub)}</span>{dew}{tag}</button></form>{edit}</td>')
         if len(row) == 1:
             row.append("<td></td>")
         cells.append("<tr>" + "".join(row) + "</tr>")
@@ -276,24 +280,25 @@ def modes(ctx, msg=""):
     now = (f"现在 {th:.1f}°C · {hu:.0f}%" + f" · 露点 {nativeui._dew_point(th, hu):.0f}°C") if th is not None and hu is not None else "现在 —"
     tgt = f"目标 {tv:.1f}°C · {hv:.0f}-{hv + 5:.0f}%" if tv is not None and hv is not None else "目标 —"
     mode = remote.MODES[cur][0] if cur else "自定义"
-    body = (f'<table class="modes">{"".join(cells)}</table>'
+    add = (_act_form("madd:new", "＋ 新增模式", "", "/app/modes", "width:100%;font-size:32px;margin-top:10px")
+           if len(remote.MODES) < remote.MAX_MODES else "")
+    editor = ""
+    if sel and remote.editable(sel):
+        name, _s, t, h, *_ = remote.MODES[sel]
+        editor = (f'<div class="card" style="margin-top:14px"><div class="meta" style="font-size:36px;font-weight:bold;color:#000">编辑：{_e(name)}</div>'
+                  f'<div class="stepper"><div class="l">温度</div><div class="v">{_act_form(f"mset:{sel}:t:-0.5", "−", "step", "/app/modes")} '
+                  f'{t:.1f}°C {_act_form(f"mset:{sel}:t:0.5", "+", "step", "/app/modes")}</div></div>'
+                  f'<div class="stepper"><div class="l">湿度</div><div class="v">{_act_form(f"mset:{sel}:h:-5", "−", "step", "/app/modes")} '
+                  f'{h}-{h + 5}% {_act_form(f"mset:{sel}:h:5", "+", "step", "/app/modes")}</div></div>'
+                  f'<form method="post" action="/remote/act" style="margin-top:14px"><input type="hidden" name="back" value="/app/modes">'
+                  f'<input name="name" value="{_e(name)}" maxlength="8" style="font-size:32px;padding:10px;width:55%;border:3px solid #000;border-radius:12px">'
+                  f' <button name="a" value="mname:{sel}" type="submit" style="width:38%;font-size:32px;padding:12px 0">改名</button></form>'
+                  f'<div style="margin-top:12px">{_act_form(f"mdel:{sel}", "删除此模式", "", "/app/modes", "width:48%;font-size:30px")} '
+                  f'{_act_form("mreset:all", "恢复默认", "", "/app/modes", "width:48%;font-size:30px")}</div></div>')
+    body = (f'<table class="modes">{"".join(cells)}</table>{add}{editor}'
             f'<div class="card" style="margin-top:14px"><div class="meta" style="font-size:30px">{now}</div>'
-            f'<div class="meta" style="font-size:30px">{tgt} · 模式：{mode}</div></div>')
+            f'<div class="meta" style="font-size:30px">{tgt} · 模式：{_e(mode)}</div></div>')
     return _shell("modes", "模式", body, ctx, msg=msg)
-
-
-def settings(ctx, msg=""):
-    rows = []
-    for k in remote.EDITABLE_MODES:
-        name, _sub, t, h, *_ = remote.MODES[k]
-        rows.append(f'<div class="card"><div class="meta" style="font-size:36px;font-weight:bold;color:#000">{name}</div>'
-                    f'<div class="stepper"><div class="l">温度</div><div class="v">{_act_form(f"mset:{k}:t:-0.5", "−", "step", "/app/settings")} '
-                    f'{t:.1f}°C {_act_form(f"mset:{k}:t:0.5", "+", "step", "/app/settings")}</div></div>'
-                    f'<div class="stepper"><div class="l">湿度</div><div class="v">{_act_form(f"mset:{k}:h:-5", "−", "step", "/app/settings")} '
-                    f'{h}-{h + 5}% {_act_form(f"mset:{k}:h:5", "+", "step", "/app/settings")}</div></div></div>')
-    body = ('<div class="meta" style="font-size:28px;margin-bottom:12px">调整每个模式的目标，到“模式”页点一下应用。</div>'
-            + "".join(rows) + _act_form("mreset:all", "恢复默认", "", "/app/settings", "width:100%;font-size:32px"))
-    return _shell("settings", "设置", body, ctx, msg=msg)
 
 
 def room(ctx, msg=""):
@@ -408,7 +413,7 @@ def board_page(ctx, msg=""):
     return _shell("board", "Hermes 留言", body, ctx, 60, msg)
 
 
-ROUTES = {"": summary, "room": room, "modes": modes, "settings": settings, "weather": weather, "quota": quota, "hermes": hermes, "board": board_page}
+ROUTES = {"": summary, "room": room, "modes": modes, "weather": weather, "quota": quota, "hermes": hermes, "board": board_page}
 
 
 def render(sub, ctx, msg=""):

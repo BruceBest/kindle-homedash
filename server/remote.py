@@ -10,6 +10,7 @@ import html
 import ipaddress
 import json
 import os
+import time
 from datetime import datetime
 
 DEVICES = [
@@ -27,39 +28,50 @@ HTARGET_MIN, HTARGET_MAX = 30.0, 70.0
 # Climate modes: one tap sets target temperature, target humidity and the two auto switches.
 # key: (label, subtitle, temp_c, humidity_pct, heat_auto, hum_auto, devices_off)
 DEFAULT_MODES = {
-    "beach": ("海边", "26°C 暖一点，几乎不穿也舒服", 26.0, 40, True, True, False),
+    "beach": ("海边", "几乎不穿也舒服", 26.0, 40, True, True, False),
     "day": ("白天", "清爽舒适", 24.0, 40, True, True, False),
     "sleep": ("睡眠", "略凉，睡得好", 22.0, 45, True, True, False),
     "away": ("外出", "只防冻，不加湿", 16.0, 40, True, False, False),
     "off": ("全关", "暖风机和加湿器都关", 21.0, 45, False, False, True),
 }
-EDITABLE_MODES = ("beach", "day", "sleep", "away")   # shown on the settings page
-MODES_FILE = os.environ.get("MODES_FILE", "/data/modes.json")   # persisted temp/humidity overrides
+# key -> (label, subtitle, temp_c, humidity_pct, heat_auto, hum_auto, devices_off); user-editable and persisted.
+MODES_FILE = os.environ.get("MODES_FILE", "/data/modes.json")
+MAX_MODES = 8
+NAME_PRESETS = ["傍晚", "午休", "阅读", "客人", "运动", "追剧", "冬夜", "清晨"]
 MODES = dict(DEFAULT_MODES)
+EDIT = {"key": None}       # mode currently open in the editor (shared by Kindle and web)
 
 
 def _load_modes():
     try:
-        ov = json.load(open(MODES_FILE))
+        data = json.load(open(MODES_FILE))
     except Exception:
-        ov = {}
-    for k, v in ov.items():
-        if k in EDITABLE_MODES and k in DEFAULT_MODES:
-            n, s, _, _, ha_, hh_, off = DEFAULT_MODES[k]
-            MODES[k] = (n, s, float(v[0]), int(v[1]), ha_, hh_, off)
+        return
+    if isinstance(data, dict) and isinstance(data.get("modes"), list):
+        MODES.clear()
+        for k, n, s, t, h, ha_, hh_, off in data["modes"]:
+            MODES[str(k)] = (str(n), str(s), float(t), int(h), bool(ha_), bool(hh_), bool(off))
+    elif isinstance(data, dict):          # legacy: {key: [temp, hum]} overrides of the defaults
+        for k, v in data.items():
+            if k in MODES:
+                n, s, _, _, ha_, hh_, off = MODES[k]
+                MODES[k] = (n, s, float(v[0]), int(v[1]), ha_, hh_, off)
 
 
 def _save_modes():
     try:
         os.makedirs(os.path.dirname(MODES_FILE), exist_ok=True)
-        json.dump({k: [MODES[k][2], MODES[k][3]] for k in EDITABLE_MODES if MODES[k][2:4] != DEFAULT_MODES[k][2:4]},
-                  open(MODES_FILE, "w"))
+        json.dump({"modes": [[k, *v] for k, v in MODES.items()]}, open(MODES_FILE, "w"), ensure_ascii=False)
     except Exception as e:
         print("save modes failed:", e, flush=True)
 
 
+def editable(key):
+    return key in MODES and not MODES[key][6]
+
+
 def edit_mode(key, field, delta):
-    if key not in EDITABLE_MODES:
+    if not editable(key):
         return False
     n, s, t, h, ha_, hh_, off = MODES[key]
     if field == "t":
@@ -73,8 +85,51 @@ def edit_mode(key, field, delta):
     return True
 
 
+def add_mode():
+    if len(MODES) >= MAX_MODES:
+        return False
+    used = {v[0] for v in MODES.values()}
+    name = next((n for n in NAME_PRESETS if n not in used), f"模式{len(MODES) + 1}")
+    key = f"m{int(time.time())}"
+    MODES[key] = (name, "自定义模式", 23.0, 40, True, True, False)
+    EDIT["key"] = key
+    _save_modes()
+    return True
+
+
+def delete_mode(key):
+    if not editable(key):
+        return False
+    del MODES[key]
+    if EDIT["key"] == key:
+        EDIT["key"] = None
+    _save_modes()
+    return True
+
+
+def rename_mode(key, name=None):
+    """name=None -> cycle through NAME_PRESETS."""
+    if not editable(key):
+        return False
+    n, s, t, h, ha_, hh_, off = MODES[key]
+    if name is None:
+        used = {v[0] for k, v in MODES.items() if k != key}
+        cand = [p for p in NAME_PRESETS if p not in used]
+        if not cand:
+            return False
+        name = cand[(cand.index(n) + 1) % len(cand)] if n in cand else cand[0]
+    name = " ".join(str(name).split())[:8]
+    if not name:
+        return False
+    MODES[key] = (name, s, t, h, ha_, hh_, off)
+    _save_modes()
+    return True
+
+
 def reset_modes():
+    MODES.clear()
     MODES.update(DEFAULT_MODES)
+    EDIT["key"] = None
     _save_modes()
 
 
@@ -151,12 +206,24 @@ def act(ha, action):
             for ent in ents.values():
                 ha("/api/services/switch/turn_off", {"entity_id": ent})
         return True
+    if kind == "msel":
+        EDIT["key"] = None if (EDIT["key"] == arg or arg not in MODES) else arg
+        return True
     if kind == "mset":      # mset:<mode>:<t|h>:<delta>
         try:
             key, field, delta = arg.split(":")
             return edit_mode(key, field, float(delta))
         except ValueError:
             return False
+    if kind == "madd":
+        return add_mode()
+    if kind == "mdel":
+        return delete_mode(arg)
+    if kind == "mrename":   # mrename:<key>  (cycle preset)  |  mname:<key>:<text>
+        return rename_mode(arg)
+    if kind == "mname":
+        key, _, text = arg.partition(":")
+        return rename_mode(key, text)
     if kind == "mreset":
         reset_modes()
         return True
